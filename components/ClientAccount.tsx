@@ -1,47 +1,148 @@
-
 import React, { useState, useEffect } from 'react';
 import { 
   Calendar, CreditCard, History, MessageSquare, Settings, LogOut, 
-  ChevronRight, Star, MapPin, Bell, Trash2, Camera, Plus, Clock, User,
-  X, AlertTriangle, CircleCheck
+  Star, Trash2, Camera, Plus, X, AlertTriangle, CircleCheck, Loader2, User
 } from 'lucide-react';
-import { MOCK_USER, PAST_BOOKINGS, REVIEWS, MASTERS, TIME_SLOTS } from '../constants';
+import { supabase } from '../src/lib/supabase';
 
 type Tab = 'bookings' | 'loyalty' | 'history' | 'reviews' | 'settings';
 
 interface ClientAccountProps {
   onHomeClick: () => void;
   onBookClick: () => void;
+  user?: any;
 }
 
-const ClientAccount: React.FC<ClientAccountProps> = ({ onHomeClick, onBookClick }) => {
+interface Booking {
+  id: string;
+  booking_date: string;
+  booking_time: string;
+  status: string;
+  price: number;
+  total_price: number;
+  services?: { name: string };
+  masters?: { name: string; photo_url?: string };
+}
+
+const TIME_SLOTS = ['10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00'];
+
+const ClientAccount: React.FC<ClientAccountProps> = ({ onHomeClick, onBookClick, user }) => {
   const [activeTab, setActiveTab] = useState<Tab>('bookings');
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [loading, setLoading] = useState(true);
   
-  // State for simulated data
-  const [upcomingBookings, setUpcomingBookings] = useState([
-    { 
-      id: 'b1', 
-      date: '25 июня, 14:00', 
-      service: '2D-3D объём', 
-      price: '3200₽', 
-      master: 'Анна Кхан', 
-      status: 'confirmed',
-      masterImg: MASTERS[0].image
-    }
-  ]);
-  const [pastBookings, setPastBookings] = useState([...PAST_BOOKINGS]);
-  const [myReviews, setMyReviews] = useState([
-    { id: 'r1', rating: 5, text: 'Самая уютная студия в городе! Ресницы держатся целый месяц...', date: '12.05.2024', service: '2D-3D объём' }
-  ]);
+  // Данные из Supabase
+  const [upcomingBookings, setUpcomingBookings] = useState<Booking[]>([]);
+  const [pastBookings, setPastBookings] = useState<Booking[]>([]);
+  const [clientData, setClientData] = useState<any>(null);
+  const [loyaltyStamps, setLoyaltyStamps] = useState(0);
+  
+  // Форма настроек
+  const [settingsForm, setSettingsForm] = useState({
+    name: '',
+    phone: '',
+    email: ''
+  });
   
   // Modal states
   const [modal, setModal] = useState<{
-    type: 'reschedule' | 'cancel' | 'review' | 'deleteAccount' | 'deleteReview' | null,
+    type: 'reschedule' | 'cancel' | 'review' | 'deleteAccount' | null,
     data?: any
   }>({ type: null });
   
   const [notification, setNotification] = useState<string | null>(null);
+
+  // Загрузка данных при монтировании
+  useEffect(() => {
+    if (user) {
+      loadClientData();
+      loadBookings();
+    }
+  }, [user]);
+
+  const loadClientData = async () => {
+    try {
+      // Пробуем получить данные из таблицы clients
+      const { data: client } = await supabase
+        .from('clients')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+
+      if (client) {
+        setClientData(client);
+        setSettingsForm({
+          name: client.name || user.user_metadata?.name || '',
+          phone: client.phone || user.user_metadata?.phone || '',
+          email: client.email || user.email || ''
+        });
+        setLoyaltyStamps(client.bonus_points || 0);
+      } else {
+        // Если клиента нет — используем данные из auth
+        setSettingsForm({
+          name: user.user_metadata?.name || '',
+          phone: user.user_metadata?.phone || '',
+          email: user.email || ''
+        });
+      }
+    } catch (error) {
+      console.error('Ошибка загрузки данных клиента:', error);
+      // Fallback на данные из auth
+      setSettingsForm({
+        name: user.user_metadata?.name || '',
+        phone: user.user_metadata?.phone || '',
+        email: user.email || ''
+      });
+    }
+  };
+
+  const loadBookings = async () => {
+    setLoading(true);
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      
+      // Загружаем записи по email или телефону клиента
+      const userEmail = user.email;
+      const userPhone = user.user_metadata?.phone;
+
+      let query = supabase
+        .from('bookings')
+        .select(`
+          *,
+          services(name),
+          masters(name, photo_url)
+        `)
+        .or(`client_email.eq.${userEmail},client_phone.eq.${userPhone}`)
+        .order('booking_date', { ascending: false });
+
+      const { data: allBookings, error } = await query;
+
+      if (error) {
+        console.error('Ошибка загрузки записей:', error);
+      } else if (allBookings) {
+        console.log('📅 Загружено записей:', allBookings.length);
+        
+        // Разделяем на предстоящие и прошедшие
+        const upcoming = allBookings.filter(b => 
+          b.booking_date >= today && b.status !== 'cancelled'
+        );
+        const past = allBookings.filter(b => 
+          b.booking_date < today || b.status === 'completed'
+        );
+        
+        setUpcomingBookings(upcoming);
+        setPastBookings(past);
+        
+        // Считаем штампы лояльности (количество завершённых визитов)
+        const completedCount = allBookings.filter(b => b.status === 'completed').length;
+        setLoyaltyStamps(completedCount % 5); // Каждые 5 визитов — бонус
+      }
+    } catch (error) {
+      console.error('Ошибка:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const menuItems = [
     { id: 'bookings', label: 'Мои записи', icon: <Calendar size={20} /> },
@@ -56,41 +157,101 @@ const ClientAccount: React.FC<ClientAccountProps> = ({ onHomeClick, onBookClick 
     setTimeout(() => setNotification(null), 3000);
   };
 
-  const handleCancelBooking = (id: string) => {
-    setUpcomingBookings(prev => prev.filter(b => b.id !== id));
-    setModal({ type: null });
-    showNotify("Запись отменена");
-  };
+  const handleCancelBooking = async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from('bookings')
+        .update({ status: 'cancelled' })
+        .eq('id', id);
 
-  const handleReschedule = (id: string, newDate: string, newTime: string) => {
-    setUpcomingBookings(prev => prev.map(b => b.id === id ? { ...b, date: `${newDate}, ${newTime}` } : b));
-    setModal({ type: null });
-    showNotify("Дата записи успешно изменена");
-  };
+      if (error) throw error;
 
-  const handleSaveReview = (reviewData: { id?: string, rating: number, text: string }) => {
-    if (reviewData.id) {
-      setMyReviews(prev => prev.map(r => r.id === reviewData.id ? { ...r, ...reviewData } : r));
-      showNotify("Отзыв изменен");
-    } else {
-      const newReview = {
-        id: Math.random().toString(36).substr(2, 9),
-        rating: reviewData.rating,
-        text: reviewData.text,
-        date: new Date().toLocaleDateString('ru-RU'),
-        service: 'Услуга'
-      };
-      setMyReviews(prev => [newReview, ...prev]);
-      showNotify("Спасибо за ваш отзыв!");
+      setUpcomingBookings(prev => prev.filter(b => b.id !== id));
+      setModal({ type: null });
+      showNotify("Запись отменена");
+    } catch (error) {
+      console.error('Ошибка отмены:', error);
+      showNotify("Ошибка при отмене записи");
     }
-    setModal({ type: null });
   };
 
-  const handleDeleteReview = (id: string) => {
-    setMyReviews(prev => prev.filter(r => r.id !== id));
-    setModal({ type: null });
-    showNotify("Отзыв удален");
+  const handleReschedule = async (id: string, newDate: string, newTime: string) => {
+    try {
+      const { error } = await supabase
+        .from('bookings')
+        .update({ 
+          booking_date: newDate, 
+          booking_time: newTime 
+        })
+        .eq('id', id);
+
+      if (error) throw error;
+
+      // Обновляем локально
+      setUpcomingBookings(prev => prev.map(b => 
+        b.id === id ? { ...b, booking_date: newDate, booking_time: newTime } : b
+      ));
+      setModal({ type: null });
+      showNotify("Дата записи успешно изменена");
+    } catch (error) {
+      console.error('Ошибка переноса:', error);
+      showNotify("Ошибка при переносе записи");
+    }
   };
+
+  const handleSaveSettings = async () => {
+    try {
+      // Обновляем в таблице clients
+      const { error } = await supabase
+        .from('clients')
+        .upsert({
+          id: user.id,
+          name: settingsForm.name,
+          phone: settingsForm.phone,
+          email: settingsForm.email
+        });
+
+      if (error) throw error;
+
+      // Также обновляем user_metadata
+      await supabase.auth.updateUser({
+        data: { name: settingsForm.name, phone: settingsForm.phone }
+      });
+
+      showNotify("Настройки профиля сохранены");
+    } catch (error) {
+      console.error('Ошибка сохранения:', error);
+      showNotify("Ошибка сохранения настроек");
+    }
+  };
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    onHomeClick();
+  };
+
+  // Форматирование даты
+  const formatDate = (dateStr: string) => {
+    const date = new Date(dateStr);
+    const months = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 
+                    'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
+    return `${date.getDate()} ${months[date.getMonth()]}`;
+  };
+
+  const formatDateShort = (dateStr: string) => {
+    const date = new Date(dateStr);
+    const months = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 
+                    'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+    return {
+      day: date.getDate().toString(),
+      month: months[date.getMonth()]
+    };
+  };
+
+  // Получаем имя пользователя
+  const userName = settingsForm.name || user?.user_metadata?.name || user?.email?.split('@')[0] || 'Пользователь';
+  const userPhone = settingsForm.phone || user?.user_metadata?.phone || '';
+  const userEmail = settingsForm.email || user?.email || '';
 
   return (
     <div className="pt-32 pb-24 container mx-auto px-6">
@@ -106,8 +267,10 @@ const ClientAccount: React.FC<ClientAccountProps> = ({ onHomeClick, onBookClick 
         {/* MOBILE MENU TOGGLE */}
         <div className="lg:hidden flex items-center justify-between bg-white p-4 rounded-2xl shadow-sm">
           <div className="flex items-center space-x-3">
-            <img src={MOCK_USER.avatar} alt="Avatar" className="w-10 h-10 rounded-full border border-[#E8C4B8]" />
-            <span className="font-bold text-[#4A3728]">{MOCK_USER.name}</span>
+            <div className="w-10 h-10 rounded-full bg-[#8B6F5C] flex items-center justify-center text-white font-bold">
+              {userName.charAt(0).toUpperCase()}
+            </div>
+            <span className="font-bold text-[#4A3728]">{userName}</span>
           </div>
           <button onClick={() => setIsMenuOpen(!isMenuOpen)} className="text-[#8B6F5C] font-bold">Меню</button>
         </div>
@@ -117,13 +280,15 @@ const ClientAccount: React.FC<ClientAccountProps> = ({ onHomeClick, onBookClick 
           <div className="bg-white rounded-[2.5rem] p-8 shadow-sm border border-[#E8C4B8]/30">
             <div className="flex flex-col items-center text-center mb-8">
               <div className="relative mb-4 group cursor-pointer">
-                <img src={MOCK_USER.avatar} alt="Profile" className="w-24 h-24 rounded-full border-4 border-[#F5F0E8] object-cover" />
+                <div className="w-24 h-24 rounded-full bg-[#8B6F5C] flex items-center justify-center text-white text-3xl font-bold border-4 border-[#F5F0E8]">
+                  {userName.charAt(0).toUpperCase()}
+                </div>
                 <div className="absolute inset-0 bg-black/40 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                   <Camera className="text-white" size={24} />
                 </div>
               </div>
-              <h2 className="text-xl font-bold text-[#4A3728]">{MOCK_USER.name}</h2>
-              <p className="text-sm text-[#8B6F5C]">{MOCK_USER.phone}</p>
+              <h2 className="text-xl font-bold text-[#4A3728]">{userName}</h2>
+              <p className="text-sm text-[#8B6F5C]">{userPhone || userEmail}</p>
             </div>
 
             <nav className="space-y-1">
@@ -142,7 +307,7 @@ const ClientAccount: React.FC<ClientAccountProps> = ({ onHomeClick, onBookClick 
                 </button>
               ))}
               <button 
-                onClick={onHomeClick}
+                onClick={handleLogout}
                 className="w-full flex items-center space-x-4 px-6 py-4 rounded-2xl font-bold text-[#D4A69A] hover:bg-[#F5F0E8] transition-all"
               >
                 <LogOut size={20} />
@@ -155,84 +320,111 @@ const ClientAccount: React.FC<ClientAccountProps> = ({ onHomeClick, onBookClick 
         {/* CONTENT AREA */}
         <main className="flex-grow space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
           
-          {activeTab === 'bookings' && (
+          {/* LOADING STATE */}
+          {loading && (
+            <div className="flex items-center justify-center py-20">
+              <Loader2 className="animate-spin text-[#8B6F5C]" size={48} />
+            </div>
+          )}
+
+          {!loading && activeTab === 'bookings' && (
             <div className="space-y-8">
               <section>
                 <h3 className="text-2xl font-rounded font-bold text-[#4A3728] mb-6">Предстоящие записи</h3>
                 {upcomingBookings.length > 0 ? (
                   <div className="grid gap-6">
-                    {upcomingBookings.map(b => (
-                      <div key={b.id} className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-[#E8C4B8]/30 flex flex-col md:flex-row md:items-center justify-between gap-6">
-                        <div className="flex items-center space-x-6">
-                          <div className="bg-[#F5F0E8] p-4 rounded-3xl text-center min-w-[100px]">
-                            <p className="text-xs text-[#8B6F5C] font-bold uppercase mb-1">{b.date.split(' ')[1]}</p>
-                            <p className="text-3xl font-rounded font-bold text-[#4A3728]">{b.date.split(' ')[0]}</p>
-                            <p className="text-sm font-bold text-[#8B6F5C]">{b.date.split(', ')[1]}</p>
-                          </div>
-                          <div>
-                            <h4 className="text-xl font-bold text-[#4A3728] mb-1">{b.service}</h4>
-                            <p className="text-[#8B6F5C] font-medium mb-2">{b.price}</p>
-                            <div className="flex items-center space-x-2 text-sm text-[#4A3728]/60">
-                              <img src={b.masterImg} className="w-6 h-6 rounded-full object-cover" />
-                              <span>Мастер: {b.master}</span>
+                    {upcomingBookings.map(b => {
+                      const dateInfo = formatDateShort(b.booking_date);
+                      return (
+                        <div key={b.id} className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-[#E8C4B8]/30 flex flex-col md:flex-row md:items-center justify-between gap-6">
+                          <div className="flex items-center space-x-6">
+                            <div className="bg-[#F5F0E8] p-4 rounded-3xl text-center min-w-[100px]">
+                              <p className="text-xs text-[#8B6F5C] font-bold uppercase mb-1">{dateInfo.month}</p>
+                              <p className="text-3xl font-rounded font-bold text-[#4A3728]">{dateInfo.day}</p>
+                              <p className="text-sm font-bold text-[#8B6F5C]">{b.booking_time}</p>
+                            </div>
+                            <div>
+                              <h4 className="text-xl font-bold text-[#4A3728] mb-1">
+                                {b.services?.name || 'Услуга'}
+                              </h4>
+                              <p className="text-[#8B6F5C] font-medium mb-2">
+                                {b.total_price || b.price || 0}₽
+                              </p>
+                              <div className="flex items-center space-x-2 text-sm text-[#4A3728]/60">
+                                {b.masters?.photo_url ? (
+                                  <img src={b.masters.photo_url} className="w-6 h-6 rounded-full object-cover" alt="" />
+                                ) : (
+                                  <div className="w-6 h-6 rounded-full bg-[#E8C4B8] flex items-center justify-center">
+                                    <User size={12} />
+                                  </div>
+                                )}
+                                <span>Мастер: {b.masters?.name || 'Любой'}</span>
+                              </div>
                             </div>
                           </div>
+                          <div className="flex flex-col sm:flex-row gap-3">
+                            <button 
+                              onClick={() => setModal({ type: 'reschedule', data: b })}
+                              className="px-6 py-2 border border-[#E8C4B8] text-[#4A3728] rounded-xl font-bold hover:bg-[#F5F0E8] transition-all"
+                            >
+                              Перенести
+                            </button>
+                            <button 
+                              onClick={() => setModal({ type: 'cancel', data: b })}
+                              className="px-6 py-2 border border-[#E8C4B8] text-red-400 rounded-xl font-bold hover:bg-red-50 transition-all"
+                            >
+                              Отменить
+                            </button>
+                          </div>
                         </div>
-                        <div className="flex flex-col sm:flex-row gap-3">
-                          <button 
-                            onClick={() => setModal({ type: 'reschedule', data: b })}
-                            className="px-6 py-2 border border-[#E8C4B8] text-[#4A3728] rounded-xl font-bold hover:bg-[#F5F0E8] transition-all"
-                          >
-                            Перенести
-                          </button>
-                          <button 
-                            onClick={() => setModal({ type: 'cancel', data: b })}
-                            className="px-6 py-2 border border-[#E8C4B8] text-red-400 rounded-xl font-bold hover:bg-red-50 transition-all"
-                          >
-                            Отменить
-                          </button>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 ) : (
                   <div className="bg-white p-12 rounded-[2.5rem] text-center border-2 border-dashed border-[#E8C4B8]">
                     <p className="text-[#4A3728]/60 mb-6">У вас пока нет предстоящих записей</p>
-                    <button onClick={onBookClick} className="bg-[#8B6F5C] text-white px-8 py-3 rounded-2xl font-bold shadow-lg">Записаться</button>
+                    <button onClick={onBookClick} className="bg-[#8B6F5C] text-white px-8 py-3 rounded-2xl font-bold shadow-lg">
+                      Записаться
+                    </button>
                   </div>
                 )}
               </section>
 
               <section>
                 <h3 className="text-2xl font-rounded font-bold text-[#4A3728] mb-6">Прошедшие записи</h3>
-                <div className="grid gap-4 mt-6">
-                  {pastBookings.map(b => (
-                    <div key={b.id} className="bg-white/60 p-6 rounded-3xl border border-[#E8C4B8]/20 flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-bold text-[#4A3728]">{b.date}</p>
-                        <p className="text-xs text-[#8B6F5C]">{b.service} • {b.master}</p>
+                {pastBookings.length > 0 ? (
+                  <div className="grid gap-4 mt-6">
+                    {pastBookings.map(b => (
+                      <div key={b.id} className="bg-white/60 p-6 rounded-3xl border border-[#E8C4B8]/20 flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-bold text-[#4A3728]">
+                            {formatDate(b.booking_date)}, {b.booking_time}
+                          </p>
+                          <p className="text-xs text-[#8B6F5C]">
+                            {b.services?.name || 'Услуга'} • {b.masters?.name || 'Мастер'}
+                          </p>
+                        </div>
+                        <div className="flex text-[#C49A7C]">
+                          <Star size={12} className="fill-[#C49A7C]" />
+                          <Star size={12} className="fill-[#C49A7C]" />
+                          <Star size={12} className="fill-[#C49A7C]" />
+                        </div>
                       </div>
-                      {!b.reviewId ? (
-                        <button 
-                          onClick={() => setModal({ type: 'review', data: { service: b.service } })}
-                          className="text-xs font-bold text-[#8B6F5C] underline hover:text-[#4A3728]"
-                        >
-                          Оставить отзыв
-                        </button>
-                      ) : (
-                        <div className="flex text-[#C49A7C]"><Star size={12} className="fill-[#C49A7C]" /><Star size={12} className="fill-[#C49A7C]" /><Star size={12} className="fill-[#C49A7C]" /></div>
-                      )}
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-[#4A3728]/60 text-center py-8">История посещений пуста</p>
+                )}
               </section>
             </div>
           )}
 
-          {activeTab === 'loyalty' && (
+          {!loading && activeTab === 'loyalty' && (
             <div className="space-y-12">
-              <div className="bg-[#D4A69A] p-10 md:p-16 rounded-[3rem] text-white shadow-2xl relative">
-                <div className="absolute top-0 right-0 p-8 opacity-10 pointer-events-none"><Star size={300} strokeWidth={1} /></div>
+              <div className="bg-[#D4A69A] p-10 md:p-16 rounded-[3rem] text-white shadow-2xl relative overflow-hidden">
+                <div className="absolute top-0 right-0 p-8 opacity-10 pointer-events-none">
+                  <Star size={300} strokeWidth={1} />
+                </div>
                 <div className="relative z-10">
                   <div className="flex justify-between items-start mb-12">
                     <div>
@@ -242,51 +434,78 @@ const ClientAccount: React.FC<ClientAccountProps> = ({ onHomeClick, onBookClick 
                     <div className="text-4xl font-rounded">K'A</div>
                   </div>
                   <div className="space-y-2">
-                    <p className="text-2xl font-rounded font-bold tracking-widest">{MOCK_USER.name}</p>
-                    <p className="text-sm text-white/60">ID: 4892 0293 8472</p>
+                    <p className="text-2xl font-rounded font-bold tracking-widest">{userName}</p>
+                    <p className="text-sm text-white/60">Клиент с {new Date(user?.created_at || Date.now()).getFullYear()} года</p>
                   </div>
                 </div>
               </div>
+              
               <section className="bg-white p-10 rounded-[3rem] shadow-sm border border-[#E8C4B8]/30">
                 <h3 className="text-2xl font-bold text-[#4A3728] text-center mb-10">Ваш прогресс</h3>
                 <div className="flex justify-center items-center space-x-4 md:space-x-8 mb-10">
                   {[1, 2, 3, 4, 5].map(i => (
                     <div key={i} className={`w-14 h-14 md:w-20 md:h-20 rounded-full flex items-center justify-center border-4 ${
-                      i <= MOCK_USER.loyaltyStamps ? 'bg-[#8B6F5C] border-[#8B6F5C] text-white' : 'bg-white border-[#E8C4B8] text-[#E8C4B8]'
+                      i <= loyaltyStamps ? 'bg-[#8B6F5C] border-[#8B6F5C] text-white' : 'bg-white border-[#E8C4B8] text-[#E8C4B8]'
                     }`}>
-                      {i <= MOCK_USER.loyaltyStamps ? <CircleCheck size={32} /> : i}
+                      {i <= loyaltyStamps ? <CircleCheck size={32} /> : i}
                     </div>
                   ))}
                 </div>
-                <p className="text-xl text-[#4A3728] text-center">Осталось <span className="font-bold text-[#8B6F5C]">{5 - MOCK_USER.loyaltyStamps} визита</span> до бесплатной процедуры!</p>
+                <p className="text-xl text-[#4A3728] text-center">
+                  {loyaltyStamps >= 5 
+                    ? <span className="text-[#8B6F5C] font-bold">🎉 Поздравляем! Следующая процедура бесплатно!</span>
+                    : <>Осталось <span className="font-bold text-[#8B6F5C]">{5 - loyaltyStamps} визита</span> до бесплатной процедуры!</>
+                  }
+                </p>
               </section>
             </div>
           )}
 
-          {activeTab === 'history' && (
+          {!loading && activeTab === 'history' && (
             <div className="bg-white rounded-[3rem] shadow-sm overflow-hidden border border-[#E8C4B8]/30">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left">
-                  <thead className="bg-[#F5F0E8] text-[#8B6F5C] uppercase text-xs font-bold">
-                    <tr><th className="px-8 py-5">Дата</th><th className="px-8 py-5">Услуга</th><th className="px-8 py-5">Мастер</th><th className="px-8 py-5">Сумма</th><th className="px-8 py-5">Статус</th></tr>
-                  </thead>
-                  <tbody className="divide-y divide-[#E8C4B8]/30">
-                    {pastBookings.map(b => (
-                      <tr key={b.id} className="hover:bg-[#F5F0E8]/30 transition-colors">
-                        <td className="px-8 py-6 font-bold text-[#4A3728]">{b.date}</td>
-                        <td className="px-8 py-6 text-[#4A3728]/80">{b.service}</td>
-                        <td className="px-8 py-6 text-[#4A3728]/80">{b.master}</td>
-                        <td className="px-8 py-6 font-bold text-[#8B6F5C]">{b.price}</td>
-                        <td className="px-8 py-6"><span className="text-[10px] font-bold px-3 py-1 rounded-full uppercase bg-green-100 text-green-600">Завершено</span></td>
+              {pastBookings.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left">
+                    <thead className="bg-[#F5F0E8] text-[#8B6F5C] uppercase text-xs font-bold">
+                      <tr>
+                        <th className="px-8 py-5">Дата</th>
+                        <th className="px-8 py-5">Услуга</th>
+                        <th className="px-8 py-5">Мастер</th>
+                        <th className="px-8 py-5">Сумма</th>
+                        <th className="px-8 py-5">Статус</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody className="divide-y divide-[#E8C4B8]/30">
+                      {pastBookings.map(b => (
+                        <tr key={b.id} className="hover:bg-[#F5F0E8]/30 transition-colors">
+                          <td className="px-8 py-6 font-bold text-[#4A3728]">{formatDate(b.booking_date)}</td>
+                          <td className="px-8 py-6 text-[#4A3728]/80">{b.services?.name || 'Услуга'}</td>
+                          <td className="px-8 py-6 text-[#4A3728]/80">{b.masters?.name || '-'}</td>
+                          <td className="px-8 py-6 font-bold text-[#8B6F5C]">{b.total_price || b.price || 0}₽</td>
+                          <td className="px-8 py-6">
+                            <span className={`text-[10px] font-bold px-3 py-1 rounded-full uppercase ${
+                              b.status === 'completed' ? 'bg-green-100 text-green-600' :
+                              b.status === 'cancelled' ? 'bg-red-100 text-red-600' :
+                              'bg-yellow-100 text-yellow-600'
+                            }`}>
+                              {b.status === 'completed' ? 'Завершено' : 
+                               b.status === 'cancelled' ? 'Отменено' : 'Ожидает'}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="p-12 text-center">
+                  <p className="text-[#4A3728]/60">История посещений пуста</p>
+                </div>
+              )}
             </div>
           )}
 
-          {activeTab === 'reviews' && (
+          {!loading && activeTab === 'reviews' && (
             <div className="space-y-6">
               <div className="flex justify-between items-center mb-4">
                 <h3 className="text-2xl font-rounded font-bold text-[#4A3728]">Мои отзывы</h3>
@@ -298,65 +517,49 @@ const ClientAccount: React.FC<ClientAccountProps> = ({ onHomeClick, onBookClick 
                 </button>
               </div>
               
-              {myReviews.length > 0 ? (
-                <div className="grid gap-6">
-                  {myReviews.map(r => (
-                    <div key={r.id} className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-[#E8C4B8]/30">
-                      <div className="flex justify-between items-start mb-4">
-                        <div className="flex space-x-1">
-                          {[...Array(5)].map((_, i) => (
-                            <Star key={i} size={16} className={i < r.rating ? "fill-[#C49A7C] text-[#C49A7C]" : "text-gray-200"} />
-                          ))}
-                        </div>
-                        <div className="flex space-x-4">
-                          <button 
-                            onClick={() => setModal({ type: 'review', data: r })}
-                            className="text-[#8B6F5C] text-sm font-bold hover:underline"
-                          >
-                            Редактировать
-                          </button>
-                          <button 
-                            onClick={() => setModal({ type: 'deleteReview', data: r })}
-                            className="text-red-400 text-sm font-bold hover:underline"
-                          >
-                            Удалить
-                          </button>
-                        </div>
-                      </div>
-                      <p className="text-[#4A3728] italic leading-relaxed mb-4">"{r.text}"</p>
-                      <p className="text-xs text-[#8B6F5C]">{r.date} • Услуга: {r.service}</p>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="bg-white p-12 rounded-[2.5rem] text-center border-2 border-dashed border-[#E8C4B8]">
-                  <p className="text-[#4A3728]/60">Вы ещё не оставляли отзывов</p>
-                </div>
-              )}
+              <div className="bg-white p-12 rounded-[2.5rem] text-center border-2 border-dashed border-[#E8C4B8]">
+                <p className="text-[#4A3728]/60">Функция отзывов скоро появится!</p>
+              </div>
             </div>
           )}
 
-          {activeTab === 'settings' && (
+          {!loading && activeTab === 'settings' && (
             <div className="bg-white p-10 md:p-16 rounded-[3rem] shadow-sm border border-[#E8C4B8]/30 max-w-2xl mx-auto">
               <h3 className="text-2xl font-rounded font-bold text-[#4A3728] mb-10 text-center">Настройки профиля</h3>
               <div className="space-y-8">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2">
                     <label className="text-xs font-bold text-[#8B6F5C] uppercase ml-2">Имя</label>
-                    <input type="text" defaultValue={MOCK_USER.name} className="w-full px-6 py-4 rounded-2xl bg-[#F5F0E8] outline-none" />
+                    <input 
+                      type="text" 
+                      value={settingsForm.name}
+                      onChange={(e) => setSettingsForm({ ...settingsForm, name: e.target.value })}
+                      className="w-full px-6 py-4 rounded-2xl bg-[#F5F0E8] outline-none focus:ring-2 focus:ring-[#8B6F5C]" 
+                    />
                   </div>
                   <div className="space-y-2">
                     <label className="text-xs font-bold text-[#8B6F5C] uppercase ml-2">Телефон</label>
-                    <input type="tel" defaultValue={MOCK_USER.phone} className="w-full px-6 py-4 rounded-2xl bg-[#F5F0E8] outline-none" />
+                    <input 
+                      type="tel" 
+                      value={settingsForm.phone}
+                      onChange={(e) => setSettingsForm({ ...settingsForm, phone: e.target.value })}
+                      className="w-full px-6 py-4 rounded-2xl bg-[#F5F0E8] outline-none focus:ring-2 focus:ring-[#8B6F5C]" 
+                    />
                   </div>
                 </div>
                 <div className="space-y-2">
                   <label className="text-xs font-bold text-[#8B6F5C] uppercase ml-2">Email</label>
-                  <input type="email" defaultValue={MOCK_USER.email} className="w-full px-6 py-4 rounded-2xl bg-[#F5F0E8] outline-none" />
+                  <input 
+                    type="email" 
+                    value={settingsForm.email}
+                    disabled
+                    className="w-full px-6 py-4 rounded-2xl bg-[#F5F0E8] outline-none opacity-60 cursor-not-allowed" 
+                  />
+                  <p className="text-xs text-[#8B6F5C] ml-2">Email нельзя изменить</p>
                 </div>
                 <button 
-                  onClick={() => showNotify("Настройки профиля сохранены")}
-                  className="w-full bg-[#8B6F5C] text-white py-4 rounded-2xl font-bold shadow-lg"
+                  onClick={handleSaveSettings}
+                  className="w-full bg-[#8B6F5C] text-white py-4 rounded-2xl font-bold shadow-lg hover:bg-[#4A3728] transition-all"
                 >
                   Сохранить изменения
                 </button>
@@ -378,12 +581,26 @@ const ClientAccount: React.FC<ClientAccountProps> = ({ onHomeClick, onBookClick 
       {modal.type === 'cancel' && (
         <Modal onClose={() => setModal({ type: null })}>
           <div className="text-center space-y-6">
-            <div className="w-16 h-16 bg-red-50 text-red-500 rounded-full flex items-center justify-center mx-auto"><AlertTriangle size={32} /></div>
+            <div className="w-16 h-16 bg-red-50 text-red-500 rounded-full flex items-center justify-center mx-auto">
+              <AlertTriangle size={32} />
+            </div>
             <h3 className="text-2xl font-rounded font-bold text-[#4A3728]">Вы уверены?</h3>
-            <p className="text-[#4A3728]/70">Запись на {modal.data?.date} будет безвозвратно отменена.</p>
+            <p className="text-[#4A3728]/70">
+              Запись на {formatDate(modal.data?.booking_date)}, {modal.data?.booking_time} будет отменена.
+            </p>
             <div className="flex flex-col gap-3">
-              <button onClick={() => handleCancelBooking(modal.data.id)} className="w-full bg-red-500 text-white py-4 rounded-2xl font-bold">Да, отменить</button>
-              <button onClick={() => setModal({ type: null })} className="w-full bg-[#F5F0E8] text-[#4A3728] py-4 rounded-2xl font-bold">Оставить запись</button>
+              <button 
+                onClick={() => handleCancelBooking(modal.data.id)} 
+                className="w-full bg-red-500 text-white py-4 rounded-2xl font-bold"
+              >
+                Да, отменить
+              </button>
+              <button 
+                onClick={() => setModal({ type: null })} 
+                className="w-full bg-[#F5F0E8] text-[#4A3728] py-4 rounded-2xl font-bold"
+              >
+                Оставить запись
+              </button>
             </div>
           </div>
         </Modal>
@@ -393,36 +610,26 @@ const ClientAccount: React.FC<ClientAccountProps> = ({ onHomeClick, onBookClick 
       {modal.type === 'deleteAccount' && (
         <Modal onClose={() => setModal({ type: null })}>
           <div className="text-center space-y-6">
-            <div className="w-16 h-16 bg-red-50 text-red-500 rounded-full flex items-center justify-center mx-auto"><AlertTriangle size={32} /></div>
-            <h3 className="text-2xl font-rounded font-bold text-[#4A3728]">Удалить аккаунт?</h3>
-            <p className="text-[#4A3728]/70">Все ваши данные, история визитов и карта лояльности будут удалены навсегда.</p>
-            <div className="flex flex-col gap-3">
-              <button onClick={onHomeClick} className="w-full bg-red-500 text-white py-4 rounded-2xl font-bold">Подтверждаю удаление</button>
-              <button onClick={() => setModal({ type: null })} className="w-full bg-[#F5F0E8] text-[#4A3728] py-4 rounded-2xl font-bold">Отмена</button>
+            <div className="w-16 h-16 bg-red-50 text-red-500 rounded-full flex items-center justify-center mx-auto">
+              <AlertTriangle size={32} />
             </div>
-          </div>
-        </Modal>
-      )}
-
-      {/* Review Modal (Create/Edit) */}
-      {modal.type === 'review' && (
-        <Modal onClose={() => setModal({ type: null })}>
-          <ReviewForm 
-            initialData={modal.data} 
-            onSave={handleSaveReview} 
-            onCancel={() => setModal({ type: null })} 
-          />
-        </Modal>
-      )}
-
-      {/* Delete Review Confirmation */}
-      {modal.type === 'deleteReview' && (
-        <Modal onClose={() => setModal({ type: null })}>
-          <div className="text-center space-y-6">
-            <h3 className="text-2xl font-rounded font-bold text-[#4A3728]">Удалить отзыв?</h3>
+            <h3 className="text-2xl font-rounded font-bold text-[#4A3728]">Удалить аккаунт?</h3>
+            <p className="text-[#4A3728]/70">
+              Все ваши данные, история визитов и карта лояльности будут удалены навсегда.
+            </p>
             <div className="flex flex-col gap-3">
-              <button onClick={() => handleDeleteReview(modal.data.id)} className="w-full bg-red-500 text-white py-4 rounded-2xl font-bold">Удалить</button>
-              <button onClick={() => setModal({ type: null })} className="w-full bg-[#F5F0E8] text-[#4A3728] py-4 rounded-2xl font-bold">Отмена</button>
+              <button 
+                onClick={handleLogout} 
+                className="w-full bg-red-500 text-white py-4 rounded-2xl font-bold"
+              >
+                Подтверждаю удаление
+              </button>
+              <button 
+                onClick={() => setModal({ type: null })} 
+                className="w-full bg-[#F5F0E8] text-[#4A3728] py-4 rounded-2xl font-bold"
+              >
+                Отмена
+              </button>
             </div>
           </div>
         </Modal>
@@ -437,7 +644,6 @@ const ClientAccount: React.FC<ClientAccountProps> = ({ onHomeClick, onBookClick 
           />
         </Modal>
       )}
-
     </div>
   );
 };
@@ -448,53 +654,39 @@ export default ClientAccount;
 const Modal: React.FC<{ children: React.ReactNode, onClose: () => void }> = ({ children, onClose }) => (
   <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-[#4A3728]/40 backdrop-blur-sm animate-in fade-in duration-300">
     <div className="bg-white w-full max-w-md rounded-[3rem] p-10 shadow-2xl relative animate-in zoom-in duration-300">
-      <button onClick={onClose} className="absolute top-6 right-6 p-2 hover:bg-[#F5F0E8] rounded-full transition-colors"><X size={24} /></button>
+      <button onClick={onClose} className="absolute top-6 right-6 p-2 hover:bg-[#F5F0E8] rounded-full transition-colors">
+        <X size={24} />
+      </button>
       {children}
     </div>
   </div>
 );
 
-const ReviewForm: React.FC<{ initialData?: any, onSave: (d: any) => void, onCancel: () => void }> = ({ initialData, onSave, onCancel }) => {
-  const [rating, setRating] = useState(initialData?.rating || 5);
-  const [text, setText] = useState(initialData?.text || '');
-
-  return (
-    <div className="space-y-6">
-      <h3 className="text-2xl font-rounded font-bold text-[#4A3728]">{initialData?.id ? 'Редактировать отзыв' : 'Оставить отзыв'}</h3>
-      <div className="flex justify-center space-x-2">
-        {[1, 2, 3, 4, 5].map(i => (
-          <button key={i} onClick={() => setRating(i)}>
-            <Star size={32} className={`${i <= rating ? 'fill-[#C49A7C] text-[#C49A7C]' : 'text-gray-200'}`} />
-          </button>
-        ))}
-      </div>
-      <textarea 
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        placeholder="Поделитесь впечатлениями о процедуре..."
-        className="w-full p-4 bg-[#F5F0E8] rounded-2xl h-32 outline-none resize-none"
-      />
-      <button 
-        onClick={() => onSave({ id: initialData?.id, rating, text })}
-        disabled={!text}
-        className="w-full bg-[#8B6F5C] text-white py-4 rounded-2xl font-bold disabled:opacity-50"
-      >
-        Сохранить
-      </button>
-    </div>
-  );
-};
-
 const RescheduleForm: React.FC<{ onSave: (date: string, time: string) => void, onCancel: () => void }> = ({ onSave, onCancel }) => {
   const [date, setDate] = useState('');
   const [time, setTime] = useState('');
+
+  // Минимальная дата — завтра
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const minDate = tomorrow.toISOString().split('T')[0];
 
   return (
     <div className="space-y-6">
       <h3 className="text-2xl font-rounded font-bold text-[#4A3728]">Новое время записи</h3>
       <div className="space-y-4">
-        <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-full p-4 bg-[#F5F0E8] rounded-2xl outline-none" />
-        <select value={time} onChange={(e) => setTime(e.target.value)} className="w-full p-4 bg-[#F5F0E8] rounded-2xl outline-none">
+        <input 
+          type="date" 
+          value={date} 
+          min={minDate}
+          onChange={(e) => setDate(e.target.value)} 
+          className="w-full p-4 bg-[#F5F0E8] rounded-2xl outline-none" 
+        />
+        <select 
+          value={time} 
+          onChange={(e) => setTime(e.target.value)} 
+          className="w-full p-4 bg-[#F5F0E8] rounded-2xl outline-none"
+        >
           <option value="">Выберите время</option>
           {TIME_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}
         </select>
