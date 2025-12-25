@@ -33,20 +33,17 @@ const ClientAccount: React.FC<ClientAccountProps> = ({ onHomeClick, onBookClick,
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   
-  // Данные из Supabase
   const [upcomingBookings, setUpcomingBookings] = useState<Booking[]>([]);
   const [pastBookings, setPastBookings] = useState<Booking[]>([]);
   const [clientData, setClientData] = useState<any>(null);
   const [loyaltyStamps, setLoyaltyStamps] = useState(0);
   
-  // Форма настроек
   const [settingsForm, setSettingsForm] = useState({
     name: '',
     phone: '',
     email: ''
   });
   
-  // Modal states
   const [modal, setModal] = useState<{
     type: 'reschedule' | 'cancel' | 'review' | 'deleteAccount' | null,
     data?: any
@@ -54,7 +51,6 @@ const ClientAccount: React.FC<ClientAccountProps> = ({ onHomeClick, onBookClick,
   
   const [notification, setNotification] = useState<string | null>(null);
 
-  // Загрузка данных при монтировании
   useEffect(() => {
     if (user) {
       loadClientData();
@@ -64,7 +60,6 @@ const ClientAccount: React.FC<ClientAccountProps> = ({ onHomeClick, onBookClick,
 
   const loadClientData = async () => {
     try {
-      // Пробуем получить данные из таблицы clients
       const { data: client } = await supabase
         .from('clients')
         .select('*')
@@ -72,16 +67,15 @@ const ClientAccount: React.FC<ClientAccountProps> = ({ onHomeClick, onBookClick,
         .single();
 
       if (client) {
-  setClientData(client);
-  setAvatarUrl(client.avatar_url || null);
-  setSettingsForm({
+        setClientData(client);
+        setAvatarUrl(client.avatar_url || null);
+        setSettingsForm({
           name: client.name || user.user_metadata?.name || '',
           phone: client.phone || user.user_metadata?.phone || '',
           email: client.email || user.email || ''
         });
         setLoyaltyStamps(client.bonus_points || 0);
       } else {
-        // Если клиента нет — используем данные из auth
         setSettingsForm({
           name: user.user_metadata?.name || '',
           phone: user.user_metadata?.phone || '',
@@ -90,7 +84,6 @@ const ClientAccount: React.FC<ClientAccountProps> = ({ onHomeClick, onBookClick,
       }
     } catch (error) {
       console.error('Ошибка загрузки данных клиента:', error);
-      // Fallback на данные из auth
       setSettingsForm({
         name: user.user_metadata?.name || '',
         phone: user.user_metadata?.phone || '',
@@ -99,74 +92,61 @@ const ClientAccount: React.FC<ClientAccountProps> = ({ onHomeClick, onBookClick,
     }
   };
 
-  // Загрузка аватарки
-const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-  const file = e.target.files?.[0];
-  if (!file || !user) return;
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !user) return;
 
-  // Проверка размера (макс 2MB)
-  if (file.size > 2 * 1024 * 1024) {
-    showNotify("Файл слишком большой (макс. 2MB)");
-    return;
-  }
+    if (file.size > 2 * 1024 * 1024) {
+      showNotify("Файл слишком большой (макс. 2MB)");
+      return;
+    }
 
-  setUploadingAvatar(true);
+    setUploadingAvatar(true);
 
-  try {
-    // Генерируем уникальное имя файла
-    const fileExt = file.name.split('.').pop();
-    const fileName = `${user.id}/${Date.now()}.${fileExt}`;
+    try {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${user.id}/${Date.now()}.${fileExt}`;
 
-    // Загружаем в Storage
-    const { error: uploadError } = await supabase.storage
-      .from('avatars')
-      .upload(fileName, file, { upsert: true });
+      const { error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(fileName, file, { upsert: true });
 
-    if (uploadError) throw uploadError;
+      if (uploadError) throw uploadError;
 
-    // Получаем публичный URL
-    const { data: { publicUrl } } = supabase.storage
-      .from('avatars')
-      .getPublicUrl(fileName);
+      const { data: { publicUrl } } = supabase.storage
+        .from('avatars')
+        .getPublicUrl(fileName);
 
-    // Сохраняем URL в таблицу clients
-    const { error: updateError } = await supabase
-      .from('clients')
-      .upsert({
-        id: user.id,
-        avatar_url: publicUrl
-      });
+      const { error: updateError } = await supabase
+        .from('clients')
+        .upsert({
+          id: user.id,
+          avatar_url: publicUrl
+        });
 
-    if (updateError) throw updateError;
+      if (updateError) throw updateError;
 
-    setAvatarUrl(publicUrl);
-    showNotify("Аватар обновлён!");
-    console.log('✅ Аватар загружен:', publicUrl);
+      setAvatarUrl(publicUrl);
+      showNotify("Аватар обновлён!");
 
-  } catch (error: any) {
-    console.error('❌ Ошибка загрузки аватара:', error);
-    showNotify("Ошибка загрузки аватара");
-  } finally {
-    setUploadingAvatar(false);
-  }
-};
+    } catch (error: any) {
+      console.error('Ошибка загрузки аватара:', error);
+      showNotify("Ошибка загрузки аватара");
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
 
   const loadBookings = async () => {
     setLoading(true);
     try {
       const today = new Date().toISOString().split('T')[0];
-      
-      // Загружаем записи по email или телефону клиента
       const userEmail = user.email;
       const userPhone = user.user_metadata?.phone;
 
       let query = supabase
         .from('bookings')
-        .select(`
-          *,
-          services(name),
-          masters(name, photo_url)
-        `)
+        .select(`*, services(name), masters(name, photo_url)`)
         .or(`client_email.eq.${userEmail},client_phone.eq.${userPhone}`)
         .order('booking_date', { ascending: false });
 
@@ -175,22 +155,14 @@ const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
       if (error) {
         console.error('Ошибка загрузки записей:', error);
       } else if (allBookings) {
-        console.log('📅 Загружено записей:', allBookings.length);
-        
-        // Разделяем на предстоящие и прошедшие
-        const upcoming = allBookings.filter(b => 
-          b.booking_date >= today && b.status !== 'cancelled'
-        );
-        const past = allBookings.filter(b => 
-          b.booking_date < today || b.status === 'completed'
-        );
+        const upcoming = allBookings.filter(b => b.booking_date >= today && b.status !== 'cancelled');
+        const past = allBookings.filter(b => b.booking_date < today || b.status === 'completed');
         
         setUpcomingBookings(upcoming);
         setPastBookings(past);
         
-        // Считаем штампы лояльности (количество завершённых визитов)
         const completedCount = allBookings.filter(b => b.status === 'completed').length;
-        setLoyaltyStamps(completedCount % 5); // Каждые 5 визитов — бонус
+        setLoyaltyStamps(completedCount % 5);
       }
     } catch (error) {
       console.error('Ошибка:', error);
@@ -234,15 +206,11 @@ const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     try {
       const { error } = await supabase
         .from('bookings')
-        .update({ 
-          booking_date: newDate, 
-          booking_time: newTime 
-        })
+        .update({ booking_date: newDate, booking_time: newTime })
         .eq('id', id);
 
       if (error) throw error;
 
-      // Обновляем локально
       setUpcomingBookings(prev => prev.map(b => 
         b.id === id ? { ...b, booking_date: newDate, booking_time: newTime } : b
       ));
@@ -256,7 +224,6 @@ const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
 
   const handleSaveSettings = async () => {
     try {
-      // Обновляем в таблице clients
       const { error } = await supabase
         .from('clients')
         .upsert({
@@ -268,7 +235,6 @@ const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
 
       if (error) throw error;
 
-      // Также обновляем user_metadata
       await supabase.auth.updateUser({
         data: { name: settingsForm.name, phone: settingsForm.phone }
       });
@@ -285,7 +251,6 @@ const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     onHomeClick();
   };
 
-  // Форматирование даты
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr);
     const months = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 
@@ -295,15 +260,10 @@ const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
 
   const formatDateShort = (dateStr: string) => {
     const date = new Date(dateStr);
-    const months = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 
-                    'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
-    return {
-      day: date.getDate().toString(),
-      month: months[date.getMonth()]
-    };
+    const months = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+    return { day: date.getDate().toString(), month: months[date.getMonth()] };
   };
 
-  // Получаем имя пользователя
   const userName = settingsForm.name || user?.user_metadata?.name || user?.email?.split('@')[0] || 'Пользователь';
   const userPhone = settingsForm.phone || user?.user_metadata?.phone || '';
   const userEmail = settingsForm.email || user?.email || '';
@@ -320,16 +280,17 @@ const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
 
       <div className="flex flex-col lg:flex-row gap-8">
         {/* MOBILE MENU TOGGLE */}
-        <div className="flex items-center space-x-3">
-  {avatarUrl ? (
-    <img src={avatarUrl} alt="Avatar" className="w-10 h-10 rounded-full object-cover border border-[#E8C4B8]" />
-  ) : (
-    <div className="w-10 h-10 rounded-full bg-[#8B6F5C] flex items-center justify-center text-white font-bold">
-      {userName.charAt(0).toUpperCase()}
-    </div>
-  )}
-  <span className="font-bold text-[#4A3728]">{userName}</span>
-</div>
+        <div className="lg:hidden flex items-center justify-between bg-white p-4 rounded-2xl shadow-sm">
+          <div className="flex items-center space-x-3">
+            {avatarUrl ? (
+              <img src={avatarUrl} alt="Avatar" className="w-10 h-10 rounded-full object-cover border border-[#E8C4B8]" />
+            ) : (
+              <div className="w-10 h-10 rounded-full bg-[#8B6F5C] flex items-center justify-center text-white font-bold">
+                {userName.charAt(0).toUpperCase()}
+              </div>
+            )}
+            <span className="font-bold text-[#4A3728]">{userName}</span>
+          </div>
           <button onClick={() => setIsMenuOpen(!isMenuOpen)} className="text-[#8B6F5C] font-bold">Меню</button>
         </div>
 
@@ -337,35 +298,35 @@ const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         <aside className={`${isMenuOpen ? 'block' : 'hidden'} lg:block w-full lg:w-80 space-y-4 shrink-0`}>
           <div className="bg-white rounded-[2.5rem] p-8 shadow-sm border border-[#E8C4B8]/30">
             <div className="flex flex-col items-center text-center mb-8">
+              {/* Avatar Upload */}
               <div className="relative mb-4 group">
-  <input
-    type="file"
-    id="avatar-upload"
-    accept="image/*"
-    className="hidden"
-    onChange={handleAvatarUpload}
-  />
-  <label htmlFor="avatar-upload" className="cursor-pointer block">
-    {avatarUrl ? (
-      <img 
-        src={avatarUrl} 
-        alt="Avatar" 
-        className="w-24 h-24 rounded-full object-cover border-4 border-[#F5F0E8]"
-      />
-    ) : (
-      <div className="w-24 h-24 rounded-full bg-[#8B6F5C] flex items-center justify-center text-white text-3xl font-bold border-4 border-[#F5F0E8]">
-        {userName.charAt(0).toUpperCase()}
-      </div>
-    )}
-    <div className="absolute inset-0 bg-black/40 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-      {uploadingAvatar ? (
-        <Loader2 className="text-white animate-spin" size={24} />
-      ) : (
-        <Camera className="text-white" size={24} />
-      )}
-    </div>
-  </label>
-</div>
+                <input
+                  type="file"
+                  id="avatar-upload"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleAvatarUpload}
+                />
+                <label htmlFor="avatar-upload" className="cursor-pointer block">
+                  {avatarUrl ? (
+                    <img 
+                      src={avatarUrl} 
+                      alt="Avatar" 
+                      className="w-24 h-24 rounded-full object-cover border-4 border-[#F5F0E8]"
+                    />
+                  ) : (
+                    <div className="w-24 h-24 rounded-full bg-[#8B6F5C] flex items-center justify-center text-white text-3xl font-bold border-4 border-[#F5F0E8]">
+                      {userName.charAt(0).toUpperCase()}
+                    </div>
+                  )}
+                  <div className="absolute inset-0 bg-black/40 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                    {uploadingAvatar ? (
+                      <Loader2 className="text-white animate-spin" size={24} />
+                    ) : (
+                      <Camera className="text-white" size={24} />
+                    )}
+                  </div>
+                </label>
               </div>
               <h2 className="text-xl font-bold text-[#4A3728]">{userName}</h2>
               <p className="text-sm text-[#8B6F5C]">{userPhone || userEmail}</p>
@@ -400,7 +361,6 @@ const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         {/* CONTENT AREA */}
         <main className="flex-grow space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
           
-          {/* LOADING STATE */}
           {loading && (
             <div className="flex items-center justify-center py-20">
               <Loader2 className="animate-spin text-[#8B6F5C]" size={48} />
@@ -424,12 +384,8 @@ const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
                               <p className="text-sm font-bold text-[#8B6F5C]">{b.booking_time}</p>
                             </div>
                             <div>
-                              <h4 className="text-xl font-bold text-[#4A3728] mb-1">
-                                {b.services?.name || 'Услуга'}
-                              </h4>
-                              <p className="text-[#8B6F5C] font-medium mb-2">
-                                {b.total_price || b.price || 0}₽
-                              </p>
+                              <h4 className="text-xl font-bold text-[#4A3728] mb-1">{b.services?.name || 'Услуга'}</h4>
+                              <p className="text-[#8B6F5C] font-medium mb-2">{b.total_price || b.price || 0}₽</p>
                               <div className="flex items-center space-x-2 text-sm text-[#4A3728]/60">
                                 {b.masters?.photo_url ? (
                                   <img src={b.masters.photo_url} className="w-6 h-6 rounded-full object-cover" alt="" />
@@ -463,9 +419,7 @@ const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
                 ) : (
                   <div className="bg-white p-12 rounded-[2.5rem] text-center border-2 border-dashed border-[#E8C4B8]">
                     <p className="text-[#4A3728]/60 mb-6">У вас пока нет предстоящих записей</p>
-                    <button onClick={onBookClick} className="bg-[#8B6F5C] text-white px-8 py-3 rounded-2xl font-bold shadow-lg">
-                      Записаться
-                    </button>
+                    <button onClick={onBookClick} className="bg-[#8B6F5C] text-white px-8 py-3 rounded-2xl font-bold shadow-lg">Записаться</button>
                   </div>
                 )}
               </section>
@@ -477,12 +431,8 @@ const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
                     {pastBookings.map(b => (
                       <div key={b.id} className="bg-white/60 p-6 rounded-3xl border border-[#E8C4B8]/20 flex items-center justify-between">
                         <div>
-                          <p className="text-sm font-bold text-[#4A3728]">
-                            {formatDate(b.booking_date)}, {b.booking_time}
-                          </p>
-                          <p className="text-xs text-[#8B6F5C]">
-                            {b.services?.name || 'Услуга'} • {b.masters?.name || 'Мастер'}
-                          </p>
+                          <p className="text-sm font-bold text-[#4A3728]">{formatDate(b.booking_date)}, {b.booking_time}</p>
+                          <p className="text-xs text-[#8B6F5C]">{b.services?.name || 'Услуга'} • {b.masters?.name || 'Мастер'}</p>
                         </div>
                         <div className="flex text-[#C49A7C]">
                           <Star size={12} className="fill-[#C49A7C]" />
@@ -568,8 +518,7 @@ const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
                               b.status === 'cancelled' ? 'bg-red-100 text-red-600' :
                               'bg-yellow-100 text-yellow-600'
                             }`}>
-                              {b.status === 'completed' ? 'Завершено' : 
-                               b.status === 'cancelled' ? 'Отменено' : 'Ожидает'}
+                              {b.status === 'completed' ? 'Завершено' : b.status === 'cancelled' ? 'Отменено' : 'Ожидает'}
                             </span>
                           </td>
                         </tr>
@@ -589,14 +538,10 @@ const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
             <div className="space-y-6">
               <div className="flex justify-between items-center mb-4">
                 <h3 className="text-2xl font-rounded font-bold text-[#4A3728]">Мои отзывы</h3>
-                <button 
-                  onClick={() => setModal({ type: 'review' })}
-                  className="flex items-center space-x-2 text-[#8B6F5C] font-bold hover:underline"
-                >
+                <button className="flex items-center space-x-2 text-[#8B6F5C] font-bold hover:underline">
                   <Plus size={18} /> <span>Написать новый</span>
                 </button>
               </div>
-              
               <div className="bg-white p-12 rounded-[2.5rem] text-center border-2 border-dashed border-[#E8C4B8]">
                 <p className="text-[#4A3728]/60">Функция отзывов скоро появится!</p>
               </div>
@@ -655,9 +600,7 @@ const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         </main>
       </div>
 
-      {/* --- MODALS --- */}
-      
-      {/* Cancellation Confirmation */}
+      {/* MODALS */}
       {modal.type === 'cancel' && (
         <Modal onClose={() => setModal({ type: null })}>
           <div className="text-center space-y-6">
@@ -665,28 +608,15 @@ const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
               <AlertTriangle size={32} />
             </div>
             <h3 className="text-2xl font-rounded font-bold text-[#4A3728]">Вы уверены?</h3>
-            <p className="text-[#4A3728]/70">
-              Запись на {formatDate(modal.data?.booking_date)}, {modal.data?.booking_time} будет отменена.
-            </p>
+            <p className="text-[#4A3728]/70">Запись на {formatDate(modal.data?.booking_date)}, {modal.data?.booking_time} будет отменена.</p>
             <div className="flex flex-col gap-3">
-              <button 
-                onClick={() => handleCancelBooking(modal.data.id)} 
-                className="w-full bg-red-500 text-white py-4 rounded-2xl font-bold"
-              >
-                Да, отменить
-              </button>
-              <button 
-                onClick={() => setModal({ type: null })} 
-                className="w-full bg-[#F5F0E8] text-[#4A3728] py-4 rounded-2xl font-bold"
-              >
-                Оставить запись
-              </button>
+              <button onClick={() => handleCancelBooking(modal.data.id)} className="w-full bg-red-500 text-white py-4 rounded-2xl font-bold">Да, отменить</button>
+              <button onClick={() => setModal({ type: null })} className="w-full bg-[#F5F0E8] text-[#4A3728] py-4 rounded-2xl font-bold">Оставить запись</button>
             </div>
           </div>
         </Modal>
       )}
 
-      {/* Account Deletion Confirmation */}
       {modal.type === 'deleteAccount' && (
         <Modal onClose={() => setModal({ type: null })}>
           <div className="text-center space-y-6">
@@ -694,34 +624,18 @@ const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
               <AlertTriangle size={32} />
             </div>
             <h3 className="text-2xl font-rounded font-bold text-[#4A3728]">Удалить аккаунт?</h3>
-            <p className="text-[#4A3728]/70">
-              Все ваши данные, история визитов и карта лояльности будут удалены навсегда.
-            </p>
+            <p className="text-[#4A3728]/70">Все ваши данные будут удалены навсегда.</p>
             <div className="flex flex-col gap-3">
-              <button 
-                onClick={handleLogout} 
-                className="w-full bg-red-500 text-white py-4 rounded-2xl font-bold"
-              >
-                Подтверждаю удаление
-              </button>
-              <button 
-                onClick={() => setModal({ type: null })} 
-                className="w-full bg-[#F5F0E8] text-[#4A3728] py-4 rounded-2xl font-bold"
-              >
-                Отмена
-              </button>
+              <button onClick={handleLogout} className="w-full bg-red-500 text-white py-4 rounded-2xl font-bold">Подтверждаю удаление</button>
+              <button onClick={() => setModal({ type: null })} className="w-full bg-[#F5F0E8] text-[#4A3728] py-4 rounded-2xl font-bold">Отмена</button>
             </div>
           </div>
         </Modal>
       )}
 
-      {/* Reschedule Modal */}
       {modal.type === 'reschedule' && (
         <Modal onClose={() => setModal({ type: null })}>
-          <RescheduleForm 
-            onSave={(date, time) => handleReschedule(modal.data.id, date, time)} 
-            onCancel={() => setModal({ type: null })} 
-          />
+          <RescheduleForm onSave={(date, time) => handleReschedule(modal.data.id, date, time)} onCancel={() => setModal({ type: null })} />
         </Modal>
       )}
     </div>
@@ -730,23 +644,18 @@ const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
 
 export default ClientAccount;
 
-// Sub-components for Modals
 const Modal: React.FC<{ children: React.ReactNode, onClose: () => void }> = ({ children, onClose }) => (
   <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-[#4A3728]/40 backdrop-blur-sm animate-in fade-in duration-300">
     <div className="bg-white w-full max-w-md rounded-[3rem] p-10 shadow-2xl relative animate-in zoom-in duration-300">
-      <button onClick={onClose} className="absolute top-6 right-6 p-2 hover:bg-[#F5F0E8] rounded-full transition-colors">
-        <X size={24} />
-      </button>
+      <button onClick={onClose} className="absolute top-6 right-6 p-2 hover:bg-[#F5F0E8] rounded-full transition-colors"><X size={24} /></button>
       {children}
     </div>
   </div>
 );
 
-const RescheduleForm: React.FC<{ onSave: (date: string, time: string) => void, onCancel: () => void }> = ({ onSave, onCancel }) => {
+const RescheduleForm: React.FC<{ onSave: (date: string, time: string) => void, onCancel: () => void }> = ({ onSave }) => {
   const [date, setDate] = useState('');
   const [time, setTime] = useState('');
-
-  // Минимальная дата — завтра
   const tomorrow = new Date();
   tomorrow.setDate(tomorrow.getDate() + 1);
   const minDate = tomorrow.toISOString().split('T')[0];
@@ -755,29 +664,13 @@ const RescheduleForm: React.FC<{ onSave: (date: string, time: string) => void, o
     <div className="space-y-6">
       <h3 className="text-2xl font-rounded font-bold text-[#4A3728]">Новое время записи</h3>
       <div className="space-y-4">
-        <input 
-          type="date" 
-          value={date} 
-          min={minDate}
-          onChange={(e) => setDate(e.target.value)} 
-          className="w-full p-4 bg-[#F5F0E8] rounded-2xl outline-none" 
-        />
-        <select 
-          value={time} 
-          onChange={(e) => setTime(e.target.value)} 
-          className="w-full p-4 bg-[#F5F0E8] rounded-2xl outline-none"
-        >
+        <input type="date" value={date} min={minDate} onChange={(e) => setDate(e.target.value)} className="w-full p-4 bg-[#F5F0E8] rounded-2xl outline-none" />
+        <select value={time} onChange={(e) => setTime(e.target.value)} className="w-full p-4 bg-[#F5F0E8] rounded-2xl outline-none">
           <option value="">Выберите время</option>
           {TIME_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}
         </select>
       </div>
-      <button 
-        onClick={() => onSave(date, time)}
-        disabled={!date || !time}
-        className="w-full bg-[#8B6F5C] text-white py-4 rounded-2xl font-bold disabled:opacity-50"
-      >
-        Перенести
-      </button>
+      <button onClick={() => onSave(date, time)} disabled={!date || !time} className="w-full bg-[#8B6F5C] text-white py-4 rounded-2xl font-bold disabled:opacity-50">Перенести</button>
     </div>
   );
 };
