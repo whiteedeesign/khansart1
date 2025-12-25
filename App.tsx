@@ -180,6 +180,7 @@ const App: React.FC = () => {
             initialServiceId={preselectedData.serviceId}
             initialMasterId={preselectedData.masterId}
             appliedPromo={preselectedData.appliedPromo}
+            user={user}
           />
         )}
         {view === 'account' && (
