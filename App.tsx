@@ -176,7 +176,13 @@ const App: React.FC = () => {
   }
 };
 
-  const handleAdminClick = () => setView('admin');
+  const handleAdminClick = () => {
+  if (user) {
+    setView('admin');
+  } else {
+    setIsAuthModalOpen(true);
+  }
+};
 
   return (
     <div className="min-h-screen selection:bg-[#E8C4B8] selection:text-[#4A3728]">
@@ -228,9 +234,9 @@ const App: React.FC = () => {
   <MasterAccount onHomeClick={handleHomeClick} user={user} />
 )}
 
-        {view === 'admin' && (
-          <AdminPanel onHomeClick={handleHomeClick} />
-        )}
+        {view === 'admin' && user && (
+  <AdminPanel onHomeClick={handleHomeClick} user={user} />
+)}
       </main>
       
       {view !== 'admin' && (
