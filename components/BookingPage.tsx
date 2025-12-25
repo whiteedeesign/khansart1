@@ -177,11 +177,13 @@ const bookingPayload = {
   booking_date: bookingDateTime.split('T')[0],
   booking_time: bookingData.time,
   duration: (selectedService as any)?.durationMinutes || 60,
+  price: servicePrice,
   total_price: servicePrice,
   status: 'pending',
   notes: bookingData.userData.comment || null,
   promo_code: appliedPromo || null
 };
+
 
 
 
