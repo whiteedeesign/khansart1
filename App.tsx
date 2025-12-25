@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import Header from './components/Header';
 import Hero from './components/Hero';
@@ -16,19 +15,48 @@ import MasterAccount from './components/MasterAccount';
 import AdminPanel from './components/AdminPanel';
 import ServicesModal from './components/ServicesModal';
 import MasterDetailModal from './components/MasterDetailModal';
-import { LoginPage, RegisterPage, ForgotPasswordPage, AuthSuccessModal } from './components/AuthPages';
+import AuthModal from './components/AuthModal';
+import { supabase } from './lib/supabase';
 import { Master } from './types';
 
-type View = 'landing' | 'booking' | 'account' | 'master' | 'admin' | 'login' | 'register' | 'forgot-password';
+type View = 'landing' | 'booking' | 'account' | 'master' | 'admin';
 
 const App: React.FC = () => {
   const [view, setView] = useState<View>('landing');
-  const [authMessage, setAuthMessage] = useState<string | null>(null);
   const [isServicesModalOpen, setIsServicesModalOpen] = useState(false);
   const [selectedMasterForDetail, setSelectedMasterForDetail] = useState<Master | null>(null);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [user, setUser] = useState<any>(null);
+  const [loadingAuth, setLoadingAuth] = useState(true);
   
   // Pre-selection state for booking
   const [preselectedData, setPreselectedData] = useState<{ serviceId?: string, masterId?: string, appliedPromo?: string }>({});
+
+  // Проверяем авторизацию при загрузке
+  useEffect(() => {
+    // Получаем текущую сессию
+    const getSession = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        setUser(session?.user ?? null);
+        console.log('👤 Текущий пользователь:', session?.user?.email || 'не авторизован');
+      } catch (error) {
+        console.error('Ошибка получения сессии:', error);
+      } finally {
+        setLoadingAuth(false);
+      }
+    };
+
+    getSession();
+
+    // Подписываемся на изменения авторизации
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+      console.log('🔄 Изменение авторизации:', session?.user?.email || 'вышел');
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
 
   useEffect(() => {
     document.documentElement.style.scrollBehavior = 'smooth';
@@ -91,24 +119,31 @@ const App: React.FC = () => {
     window.history.pushState(null, '', '/');
   };
 
-  const handleAccountClick = () => setView('login');
+  const handleAccountClick = () => {
+    if (user) {
+      setView('account');
+    } else {
+      setIsAuthModalOpen(true);
+    }
+  };
+
+  const handleAuthClick = () => {
+    setIsAuthModalOpen(true);
+  };
+
+  const handleAuthSuccess = (loggedInUser: any) => {
+    setUser(loggedInUser);
+    setIsAuthModalOpen(false);
+    // Можно сразу перейти в личный кабинет
+    // setView('account');
+  };
+
   const handleMasterClick = () => setView('master');
   const handleAdminClick = () => setView('admin');
-  
-  const handleAuthSuccess = (msg: string) => {
-    setAuthMessage(msg);
-  };
-
-  const closeAuthModal = () => {
-    setAuthMessage(null);
-    setView('login');
-  };
-
-  const isAuthPage = ['login', 'register', 'forgot-password'].includes(view);
 
   return (
     <div className="min-h-screen selection:bg-[#E8C4B8] selection:text-[#4A3728]">
-      {view !== 'admin' && !isAuthPage && (
+      {view !== 'admin' && (
         <Header 
           onBookClick={() => handleBookingClick()} 
           onHomeClick={handleHomeClick} 
@@ -116,6 +151,8 @@ const App: React.FC = () => {
           onMasterClick={handleMasterClick}
           onAdminClick={handleAdminClick}
           scrollToSection={scrollToSection}
+          user={user}
+          onAuthClick={handleAuthClick}
         />
       )}
       <main>
@@ -154,33 +191,9 @@ const App: React.FC = () => {
         {view === 'admin' && (
           <AdminPanel onHomeClick={handleHomeClick} />
         )}
-
-        {/* Auth Views */}
-        {view === 'login' && (
-          <LoginPage 
-            onRegisterClick={() => setView('register')} 
-            onForgotClick={() => setView('forgot-password')}
-            onSuccess={() => setView('account')}
-            onHomeClick={handleHomeClick}
-          />
-        )}
-        {view === 'register' && (
-          <RegisterPage 
-            onLoginClick={() => setView('login')} 
-            onSuccess={handleAuthSuccess}
-            onHomeClick={handleHomeClick}
-          />
-        )}
-        {view === 'forgot-password' && (
-          <ForgotPasswordPage 
-            onBackClick={() => setView('login')} 
-            onSuccess={handleAuthSuccess}
-            onHomeClick={handleHomeClick}
-          />
-        )}
       </main>
       
-      {view !== 'admin' && !isAuthPage && (
+      {view !== 'admin' && (
         <Footer 
           onHomeClick={handleHomeClick} 
           onBookClick={() => handleBookingClick()} 
@@ -188,9 +201,12 @@ const App: React.FC = () => {
         />
       )}
 
-      {authMessage && (
-        <AuthSuccessModal message={authMessage} onClose={closeAuthModal} />
-      )}
+      {/* Auth Modal */}
+      <AuthModal 
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
+        onSuccess={handleAuthSuccess}
+      />
 
       {/* Services Modal */}
       {isServicesModalOpen && (
