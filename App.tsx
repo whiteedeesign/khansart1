@@ -216,20 +216,23 @@ const App: React.FC = () => {
           <WhyUs />
           <HowItWorks />
           <Services 
-            services={services}
-            onBook={handleBookService}
-            onViewAll={() => setIsServicesModalOpen(true)}
-          />
+  onBook={handleBookService}
+  onViewAll={() => setIsServicesModalOpen(true)}
+/>
+<Masters 
+  onMasterClick={handleMasterClick}
+/>
+
           <Masters 
             masters={masters}
             onMasterClick={handleMasterClick}
           />
           <Gallery />
           <Promotions 
-            promotions={promotions}
-            onApply={handleApplyPromotion}
-          />
-          <Reviews reviews={reviews} />
+  onApply={handleApplyPromotion}
+/>
+<Reviews />
+
           <Footer />
           
           <ServicesModal
