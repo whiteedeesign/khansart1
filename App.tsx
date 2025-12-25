@@ -168,7 +168,13 @@ const App: React.FC = () => {
     // setView('account');
   };
 
-  const handleMasterClick = () => setView('master');
+  const handleMasterClick = () => {
+  if (user) {
+    setView('master');
+  } else {
+    setIsAuthModalOpen(true);
+  }
+};
   const handleAdminClick = () => setView('admin');
 
   return (
@@ -218,8 +224,8 @@ const App: React.FC = () => {
           <ClientAccount onHomeClick={handleHomeClick} onBookClick={() => handleBookingClick()} user={user}/>
         )}
         {view === 'master' && (
-          <MasterAccount onHomeClick={handleHomeClick} />
-        )}
+  <MasterAccount onHomeClick={handleHomeClick} user={user} />
+)}
         {view === 'admin' && (
           <AdminPanel onHomeClick={handleHomeClick} />
         )}
