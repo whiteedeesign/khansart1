@@ -1,6 +1,7 @@
-
-import React from 'react';
-import { SERVICES, COLORS } from '../constants';
+import React, { useState, useEffect } from 'react';
+import { supabase } from '../src/lib/supabase';
+import { SERVICES as FALLBACK_SERVICES, COLORS } from '../constants';
+import { Service } from '../types';
 
 interface ServicesProps {
   onServiceClick?: (id: string) => void;
@@ -8,8 +9,45 @@ interface ServicesProps {
 }
 
 const Services: React.FC<ServicesProps> = ({ onServiceClick, onShowAllClick }) => {
+  const [services, setServices] = useState<Service[]>(FALLBACK_SERVICES);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function loadServices() {
+      try {
+        const { data, error } = await supabase
+          .from('services')
+          .select('*')
+          .eq('is_visible', true)
+          .order('sort_order');
+
+        if (error) throw error;
+
+        if (data && data.length > 0) {
+          const formatted: Service[] = data.map(s => ({
+            id: s.id,
+            name: s.name,
+            price: `от ${s.price}₽`,
+            duration: s.duration >= 60 
+              ? `${Math.floor(s.duration / 60)}${s.duration % 60 > 0 ? `.${s.duration % 60}` : ''} ч.`
+              : `${s.duration} мин.`,
+            category: 'Наращивание' as const,
+            description: s.description || ''
+          }));
+          setServices(formatted);
+          console.log('✅ Услуги загружены из Supabase:', formatted.length);
+        }
+      } catch (error) {
+        console.log('⚠️ Используем локальные данные для услуг');
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadServices();
+  }, []);
+
   // Show only first 4 services on the landing page
-  const previewServices = SERVICES.slice(0, 4);
+  const previewServices = services.slice(0, 4);
 
   return (
     <section id="services" className="py-16 md:py-24 bg-white rounded-[2rem] md:rounded-[4rem] mx-2 sm:mx-4 md:mx-10 my-8 md:my-12 scroll-mt-24">
@@ -27,27 +65,33 @@ const Services: React.FC<ServicesProps> = ({ onServiceClick, onShowAllClick }) =
           </button>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
-          {previewServices.map((service, index) => (
-            <div 
-              key={service.id} 
-              onClick={() => onServiceClick?.(service.id)}
-              className={`p-6 md:p-8 rounded-2xl md:rounded-3xl border border-[#E8C4B8] flex items-center justify-between group cursor-pointer transition-all hover:bg-[#F5F0E8] hover:shadow-lg ${
-                index % 2 === 1 ? 'md:translate-y-6' : ''
-              }`}
-            >
-              <div className="space-y-1 md:space-y-2">
-                <h3 className="text-lg md:text-xl font-bold text-[#4A3728] group-hover:text-[#8B6F5C] transition-colors">
-                  {service.name}
-                </h3>
-                <p className="text-xs md:text-sm text-[#4A3728]/60">Длительность: {service.duration}</p>
+        {loading ? (
+          <div className="flex justify-center py-12">
+            <div className="w-8 h-8 border-4 border-[#8B6F5C] border-t-transparent rounded-full animate-spin"></div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
+            {previewServices.map((service, index) => (
+              <div 
+                key={service.id} 
+                onClick={() => onServiceClick?.(service.id)}
+                className={`p-6 md:p-8 rounded-2xl md:rounded-3xl border border-[#E8C4B8] flex items-center justify-between group cursor-pointer transition-all hover:bg-[#F5F0E8] hover:shadow-lg ${
+                  index % 2 === 1 ? 'md:translate-y-6' : ''
+                }`}
+              >
+                <div className="space-y-1 md:space-y-2">
+                  <h3 className="text-lg md:text-xl font-bold text-[#4A3728] group-hover:text-[#8B6F5C] transition-colors">
+                    {service.name}
+                  </h3>
+                  <p className="text-xs md:text-sm text-[#4A3728]/60">Длительность: {service.duration}</p>
+                </div>
+                <div className="text-right shrink-0">
+                  <span className="text-xl md:text-2xl font-rounded font-bold text-[#8B6F5C]">{service.price}</span>
+                </div>
               </div>
-              <div className="text-right shrink-0">
-                <span className="text-xl md:text-2xl font-rounded font-bold text-[#8B6F5C]">{service.price}</span>
-              </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
         
         <div className="mt-12 text-center md:hidden">
           <button 
