@@ -358,7 +358,7 @@ const AdminBookings: React.FC<AdminBookingsProps> = ({ onNotify }) => {
                     </div>
                   </td>
                   <td className="px-6 py-4">
-                    <p className="font-bold text-[#4A3728]">{booking.total_price || booking.price || 0}₸</p>
+                    <p className="font-bold text-[#4A3728]">{booking.total_price || booking.price || 0}₽</p>
                   </td>
                   <td className="px-6 py-4">
                     {getStatusBadge(booking.status)}
@@ -494,7 +494,7 @@ const AdminBookings: React.FC<AdminBookingsProps> = ({ onNotify }) => {
                   <p className="text-sm text-[#8B6F5C]">{viewBooking.duration || 60} мин</p>
                 </div>
                 <p className="ml-auto font-bold text-[#4A3728] text-lg">
-                  {viewBooking.total_price || viewBooking.price}₸
+                  {viewBooking.total_price || viewBooking.price}₽
                 </p>
               </div>
 
