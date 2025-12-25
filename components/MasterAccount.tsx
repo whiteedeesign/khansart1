@@ -245,12 +245,6 @@ const MasterAccount: React.FC<MasterAccountProps> = ({ onHomeClick, user }) => {
   return time.slice(0, 5);
 };
 
-  // Форматирование времени (убираем секунды: "11:00:00" -> "11:00")
-  const formatTime = (time: string) => {
-    if (!time) return '';
-    return time.slice(0, 5);
-  };
-
   // Loading state
   if (loading) {
     return (
