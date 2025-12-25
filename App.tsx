@@ -237,14 +237,18 @@ const App: React.FC = () => {
           </>
         )}
         {view === 'booking' && (
-          <BookingPage 
-            onHomeClick={handleHomeClick} 
-            initialServiceId={preselectedData.serviceId}
-            initialMasterId={preselectedData.masterId}
-            appliedPromo={preselectedData.appliedPromo}
-            user={user}
-          />
-        )}
+  <BookingPage 
+    onHomeClick={handleHomeClick} 
+    initialServiceId={preselectedData.serviceId}
+    initialMasterId={preselectedData.masterId}
+    appliedPromo={preselectedData.appliedPromo}
+    promoCode={preselectedData.promoCode}
+    discountPercent={preselectedData.discountPercent}
+    discountAmount={preselectedData.discountAmount}
+    user={user}
+  />
+)}
+
         {view === 'account' && (
           <ClientAccount onHomeClick={handleHomeClick} onBookClick={() => handleBookingClick()} user={user}/>
         )}
