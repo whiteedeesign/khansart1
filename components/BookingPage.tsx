@@ -161,9 +161,14 @@ const BookingPage: React.FC<BookingPageProps> = ({ onHomeClick, initialServiceId
 
     try {
       // Prepare booking data for Supabase
-      const bookingDateTime = parseBookingDate(bookingData.date!, bookingData.time!);
-      
-      const bookingPayload = {
+const bookingDateTime = parseBookingDate(bookingData.date!, bookingData.time!);
+
+// Получаем числовую цену из строки "от 2500₽" → 2500
+const servicePrice = selectedService?.price 
+  ? parseInt(selectedService.price.replace(/[^0-9]/g, '')) 
+  : 0;
+
+const bookingPayload = {
   client_name: bookingData.userData.name,
   client_phone: bookingData.userData.phone,
   client_email: bookingData.userData.email || null,
@@ -172,11 +177,12 @@ const BookingPage: React.FC<BookingPageProps> = ({ onHomeClick, initialServiceId
   booking_date: bookingDateTime.split('T')[0],
   booking_time: bookingData.time,
   duration: (selectedService as any)?.durationMinutes || 60,
-  total_price: (selectedService as any)?.priceNumber || 0,
+  total_price: servicePrice,
   status: 'pending',
   notes: bookingData.userData.comment || null,
   promo_code: appliedPromo || null
 };
+
 
 
       console.log('📤 Отправляем запись:', bookingPayload);
