@@ -183,7 +183,7 @@ const App: React.FC = () => {
           />
         )}
         {view === 'account' && (
-          <ClientAccount onHomeClick={handleHomeClick} onBookClick={() => handleBookingClick()} />
+          <ClientAccount onHomeClick={handleHomeClick} onBookClick={() => handleBookingClick()} user={user}/>
         )}
         {view === 'master' && (
           <MasterAccount onHomeClick={handleHomeClick} />
