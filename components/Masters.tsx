@@ -1,6 +1,6 @@
-
-import React from 'react';
-import { MASTERS, COLORS } from '../constants';
+import React, { useState, useEffect } from 'react';
+import { supabase } from '../src/lib/supabase';
+import { MASTERS as FALLBACK_MASTERS } from '../constants';
 import { Master } from '../types';
 
 interface MastersProps {
@@ -9,64 +9,96 @@ interface MastersProps {
 }
 
 const Masters: React.FC<MastersProps> = ({ onMasterClick, onViewDetail }) => {
+  const [masters, setMasters] = useState<Master[]>(FALLBACK_MASTERS);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function loadMasters() {
+      try {
+        const { data, error } = await supabase
+          .from('masters')
+          .select('*')
+          .eq('is_active', true);
+
+        if (error) throw error;
+
+        if (data && data.length > 0) {
+          const formatted: Master[] = data.map(m => ({
+            id: m.id,
+            name: m.name,
+            role: m.specialization || 'Мастер',
+            image: m.photo_url || 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=400&h=500',
+            experience: m.experience || '',
+            description: m.bio || '',
+            rating: 5.0
+          }));
+          setMasters(formatted);
+          console.log('✅ Мастера загружены из Supabase:', formatted.length);
+        }
+      } catch (error) {
+        console.log('⚠️ Используем локальные данные для мастеров');
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadMasters();
+  }, []);
+
   return (
-    <section id="masters" className="py-24 scroll-mt-24">
-      <div className="container mx-auto px-6 text-center">
-        <h2 className="text-3xl md:text-4xl font-rounded font-bold text-[#4A3728] mb-16">Наши мастера</h2>
-        
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-12">
-          {MASTERS.map((master) => (
-            <div key={master.id} className="group">
-              <div 
-                className="relative mb-6 overflow-hidden rounded-[3rem] aspect-[4/5] shadow-lg cursor-pointer bg-[#E8C4B8]"
-                onClick={() => onViewDetail?.(master)}
-              >
-                <img 
-                  src={master.image} 
-                  alt={master.name} 
-                  className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-700 group-hover:scale-105"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-[#8B6F5C]/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end justify-center pb-8">
-                  <button 
-                    className="bg-white text-[#4A3728] px-8 py-3 rounded-full font-bold shadow-xl transform translate-y-4 group-hover:translate-y-0 transition-transform hover:bg-[#8B6F5C] hover:text-white transition-all"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onMasterClick?.(master.id);
-                    }}
-                  >
-                    Записаться к мастеру
-                  </button>
-                </div>
-              </div>
-              <div 
-                className="cursor-pointer space-y-1"
-                onClick={() => onViewDetail?.(master)}
-              >
-                <h3 className="text-2xl font-rounded font-bold text-[#4A3728] group-hover:text-[#8B6F5C] transition-colors">{master.name}</h3>
-                <p className="text-[#8B6F5C] font-medium">{master.role}</p>
-                {master.rating && (
-                  <div className="flex justify-center items-center text-[#C49A7C] text-sm font-bold">
-                    <span className="mr-1">{master.rating}</span>
-                    <div className="flex">
-                      {[...Array(5)].map((_, i) => (
-                        <svg key={i} className={`w-3 h-3 ${i < Math.floor(master.rating || 0) ? 'fill-current' : 'fill-gray-300'}`} viewBox="0 0 20 20">
-                          <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-                        </svg>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          ))}
+    <section id="masters" className="py-16 md:py-24 scroll-mt-24">
+      <div className="container mx-auto px-4 sm:px-6">
+        <div className="text-center mb-12 md:mb-16">
+          <h2 className="text-3xl md:text-5xl font-rounded font-bold text-[#4A3728] mb-4">Наши мастера</h2>
+          <p className="text-lg md:text-xl text-[#8B6F5C] max-w-2xl mx-auto">
+            Профессионалы с многолетним опытом, которые создадут для вас идеальный образ
+          </p>
         </div>
 
-        <button 
-          onClick={() => onMasterClick?.('any')}
-          className="mt-16 bg-[#F5F0E8] border-2 border-[#8B6F5C] text-[#8B6F5C] px-10 py-4 rounded-2xl font-bold hover:bg-[#8B6F5C] hover:text-white transition-all shadow-sm"
-        >
-          Познакомиться со всеми мастерами
-        </button>
+        {loading ? (
+          <div className="flex justify-center py-12">
+            <div className="w-8 h-8 border-4 border-[#8B6F5C] border-t-transparent rounded-full animate-spin"></div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
+            {masters.map((master) => (
+              <div 
+                key={master.id}
+                className="group bg-white rounded-3xl overflow-hidden shadow-lg hover:shadow-xl transition-all duration-300 cursor-pointer"
+                onClick={() => onViewDetail?.(master)}
+              >
+                <div className="aspect-[4/5] overflow-hidden">
+                  <img 
+                    src={master.image} 
+                    alt={master.name}
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                  />
+                </div>
+                <div className="p-6">
+                  <h3 className="text-xl font-bold text-[#4A3728] mb-1">{master.name}</h3>
+                  <p className="text-[#8B6F5C] mb-3">{master.role}</p>
+                  {master.experience && (
+                    <p className="text-sm text-[#4A3728]/60 mb-4">Опыт: {master.experience}</p>
+                  )}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1">
+                      <span className="text-amber-400">★</span>
+                      <span className="font-semibold text-[#4A3728]">{master.rating}</span>
+                    </div>
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onMasterClick?.(master.id);
+                      }}
+                      className="bg-[#8B6F5C] text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-[#4A3728] transition-colors"
+                    >
+                      Записаться
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </section>
   );
