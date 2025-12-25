@@ -27,6 +27,7 @@ const App: React.FC = () => {
   const [selectedMasterForDetail, setSelectedMasterForDetail] = useState<Master | null>(null);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [user, setUser] = useState<any>(null);
+  const [userAvatar, setUserAvatar] = useState<string | null>(null);
   const [loadingAuth, setLoadingAuth] = useState(true);
   
   // Pre-selection state for booking
@@ -34,29 +35,58 @@ const App: React.FC = () => {
 
   // Проверяем авторизацию при загрузке
   useEffect(() => {
-    // Получаем текущую сессию
-    const getSession = async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        setUser(session?.user ?? null);
-        console.log('👤 Текущий пользователь:', session?.user?.email || 'не авторизован');
-      } catch (error) {
-        console.error('Ошибка получения сессии:', error);
-      } finally {
-        setLoadingAuth(false);
+  // Функция загрузки аватара
+  const loadUserAvatar = async (userId: string) => {
+    try {
+      const { data: client } = await supabase
+        .from('clients')
+        .select('avatar_url')
+        .eq('id', userId)
+        .single();
+      
+      if (client?.avatar_url) {
+        setUserAvatar(client.avatar_url);
       }
-    };
+    } catch (error) {
+      console.log('Аватар не найден');
+    }
+  };
 
-    getSession();
-
-    // Подписываемся на изменения авторизации
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+  // Получаем текущую сессию
+  const getSession = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
       setUser(session?.user ?? null);
-      console.log('🔄 Изменение авторизации:', session?.user?.email || 'вышел');
-    });
+      console.log('👤 Текущий пользователь:', session?.user?.email || 'не авторизован');
+      
+      // Загружаем аватар если пользователь авторизован
+      if (session?.user?.id) {
+        loadUserAvatar(session.user.id);
+      }
+    } catch (error) {
+      console.error('Ошибка получения сессии:', error);
+    } finally {
+      setLoadingAuth(false);
+    }
+  };
 
-    return () => subscription.unsubscribe();
-  }, []);
+  getSession();
+
+  // Подписываемся на изменения авторизации
+  const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    setUser(session?.user ?? null);
+    console.log('🔄 Изменение авторизации:', session?.user?.email || 'вышел');
+    
+    // Загружаем/очищаем аватар
+    if (session?.user?.id) {
+      loadUserAvatar(session.user.id);
+    } else {
+      setUserAvatar(null);
+    }
+  });
+
+  return () => subscription.unsubscribe();
+}, []);
 
   useEffect(() => {
     document.documentElement.style.scrollBehavior = 'smooth';
@@ -152,6 +182,7 @@ const App: React.FC = () => {
           onAdminClick={handleAdminClick}
           scrollToSection={scrollToSection}
           user={user}
+          userAvatar={userAvatar}
           onAuthClick={handleAuthClick}
         />
       )}
