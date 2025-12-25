@@ -1,6 +1,7 @@
 
 import React from 'react';
 import { Image as ImageIcon } from 'lucide-react';
+import { supabase } from '../src/lib/supabase';
 
 const Gallery: React.FC = () => {
   const images = [
