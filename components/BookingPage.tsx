@@ -9,9 +9,10 @@ interface BookingPageProps {
   initialServiceId?: string;
   initialMasterId?: string;
   appliedPromo?: string;
+  user?: any;
 }
 
-const BookingPage: React.FC<BookingPageProps> = ({ onHomeClick, initialServiceId, initialMasterId, appliedPromo }) => {
+const BookingPage: React.FC<BookingPageProps> = ({ onHomeClick, initialServiceId, initialMasterId, appliedPromo, user }) => {
   const [step, setStep] = useState(1);
   const [services, setServices] = useState<Service[]>(FALLBACK_SERVICES);
   const [masters, setMasters] = useState<Master[]>(FALLBACK_MASTERS);
@@ -35,6 +36,22 @@ const BookingPage: React.FC<BookingPageProps> = ({ onHomeClick, initialServiceId
 
   const [isSuccess, setIsSuccess] = useState(false);
   const [bookingId, setBookingId] = useState<string | null>(null);
+
+  // Автозаполнение данных для авторизованных пользователей
+useEffect(() => {
+  if (user) {
+    setBookingData(prev => ({
+      ...prev,
+      userData: {
+        ...prev.userData,
+        name: user.user_metadata?.name || prev.userData.name,
+        phone: user.user_metadata?.phone || prev.userData.phone,
+        email: user.email || prev.userData.email,
+      }
+    }));
+    console.log('👤 Данные пользователя подставлены:', user.email);
+  }
+}, [user]);
 
   // Categories for Step 1
   const categories = ['Наращивание', 'Ламинирование', 'Коррекция', 'Оформление'];
