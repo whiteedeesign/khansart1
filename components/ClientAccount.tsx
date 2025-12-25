@@ -179,7 +179,7 @@ const ClientAccount: React.FC<ClientAccountProps> = ({ onHomeClick, onBookClick,
       const past = allBookings.filter(b => 
         b.booking_date < today || b.status === 'completed' || b.status === 'cancelled'
       );
-      
+      //
       setUpcomingBookings(upcoming);
       setPastBookings(past);
       
