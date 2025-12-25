@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Calendar, CreditCard, History, MessageSquare, Settings, LogOut, 
-  Star, Trash2, Camera, Plus, X, AlertTriangle, CircleCheck, Loader2, User
+  Star, Trash2, Camera, Plus, X, AlertTriangle, CircleCheck, Loader2, User, Send
 } from 'lucide-react';
 import { supabase } from '../src/lib/supabase';
 
@@ -20,8 +20,21 @@ interface Booking {
   status: string;
   price: number;
   total_price: number;
+  has_review?: boolean;
+  service_id?: string;
+  master_id?: string;
   services?: { name: string };
-  masters?: { name: string; photo_url?: string };
+  masters?: { id: string; name: string; photo_url?: string };
+}
+
+interface Review {
+  id: string;
+  rating: number;
+  comment: string;
+  created_at: string;
+  is_published: boolean;
+  masters?: { name: string };
+  services?: { name: string };
 }
 
 const TIME_SLOTS = ['10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00'];
@@ -35,6 +48,7 @@ const ClientAccount: React.FC<ClientAccountProps> = ({ onHomeClick, onBookClick,
   
   const [upcomingBookings, setUpcomingBookings] = useState<Booking[]>([]);
   const [pastBookings, setPastBookings] = useState<Booking[]>([]);
+  const [myReviews, setMyReviews] = useState<Review[]>([]);
   const [clientData, setClientData] = useState<any>(null);
   const [loyaltyStamps, setLoyaltyStamps] = useState(0);
   
@@ -50,11 +64,17 @@ const ClientAccount: React.FC<ClientAccountProps> = ({ onHomeClick, onBookClick,
   }>({ type: null });
   
   const [notification, setNotification] = useState<string | null>(null);
+  
+  // Состояние для отзыва
+  const [reviewRating, setReviewRating] = useState(5);
+  const [reviewComment, setReviewComment] = useState('');
+  const [submittingReview, setSubmittingReview] = useState(false);
 
   useEffect(() => {
     if (user) {
       loadClientData();
       loadBookings();
+      loadMyReviews();
     }
   }, [user]);
 
@@ -118,14 +138,13 @@ const ClientAccount: React.FC<ClientAccountProps> = ({ onHomeClick, onBookClick,
         .getPublicUrl(fileName);
 
       const { error: updateError } = await supabase
-  .from('clients')
-  .upsert({
-    id: user.id,
-    avatar_url: publicUrl,
-    name: settingsForm.name || user.user_metadata?.name || user.email?.split('@')[0] || 'Пользователь',
-    email: user.email
-  });
-
+        .from('clients')
+        .upsert({
+          id: user.id,
+          avatar_url: publicUrl,
+          name: settingsForm.name || user.user_metadata?.name || user.email?.split('@')[0] || 'Пользователь',
+          email: user.email
+        });
 
       if (updateError) throw updateError;
 
@@ -141,60 +160,133 @@ const ClientAccount: React.FC<ClientAccountProps> = ({ onHomeClick, onBookClick,
   };
 
   const loadBookings = async () => {
-  setLoading(true);
-  try {
-    const today = new Date().toISOString().split('T')[0];
-    const userEmail = user.email;
-    const userPhone = user.user_metadata?.phone;
-    const userId = user.id;
+    setLoading(true);
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const userEmail = user.email;
+      const userPhone = user.user_metadata?.phone;
+      const userId = user.id;
 
-    console.log('🔍 Ищем записи для:', { userId, userEmail, userPhone });
+      console.log('🔍 Ищем записи для:', { userId, userEmail, userPhone });
 
-    // Строим фильтр для поиска
-    let filters = [];
-    if (userId) filters.push(`user_id.eq.${userId}`);
-    if (userEmail) filters.push(`client_email.eq.${userEmail}`);
-    if (userPhone) filters.push(`client_phone.eq.${userPhone}`);
+      let filters = [];
+      if (userId) filters.push(`user_id.eq.${userId}`);
+      if (userEmail) filters.push(`client_email.eq.${userEmail}`);
+      if (userPhone) filters.push(`client_phone.eq.${userPhone}`);
 
-    if (filters.length === 0) {
-      console.log('⚠️ Нет данных для поиска записей');
+      if (filters.length === 0) {
+        console.log('⚠️ Нет данных для поиска записей');
+        setLoading(false);
+        return;
+      }
+
+      const { data: allBookings, error } = await supabase
+        .from('bookings')
+        .select(`*, services(name), masters(id, name, photo_url)`)
+        .or(filters.join(','))
+        .order('booking_date', { ascending: false });
+
+      console.log('📋 Найдено записей:', allBookings?.length, allBookings);
+
+      if (error) {
+        console.error('❌ Ошибка загрузки записей:', error);
+      } else if (allBookings) {
+        const upcoming = allBookings.filter(b => 
+          b.booking_date >= today && b.status !== 'cancelled' && b.status !== 'completed'
+        );
+        const past = allBookings.filter(b => 
+          b.booking_date < today || b.status === 'completed' || b.status === 'cancelled'
+        );
+        
+        setUpcomingBookings(upcoming);
+        setPastBookings(past);
+        
+        const completedCount = allBookings.filter(b => b.status === 'completed').length;
+        setLoyaltyStamps(completedCount % 5);
+        
+        console.log('✅ Предстоящие:', upcoming.length, 'История:', past.length);
+      }
+    } catch (error) {
+      console.error('❌ Ошибка:', error);
+    } finally {
       setLoading(false);
+    }
+  };
+
+  const loadMyReviews = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('reviews')
+        .select(`*, masters(name), services(name)`)
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setMyReviews(data || []);
+      console.log('📝 Мои отзывы:', data?.length);
+    } catch (error) {
+      console.error('Ошибка загрузки отзывов:', error);
+    }
+  };
+
+  // Открыть модалку отзыва
+  const openReviewModal = (booking: Booking) => {
+    setReviewRating(5);
+    setReviewComment('');
+    setModal({ type: 'review', data: booking });
+  };
+
+  // Отправить отзыв
+  const submitReview = async () => {
+    const booking = modal.data as Booking;
+    if (!booking) return;
+    
+    const masterId = booking.masters?.id || booking.master_id;
+    if (!masterId) {
+      showNotify("Ошибка: мастер не найден");
       return;
     }
+    
+    setSubmittingReview(true);
+    try {
+      const { error: reviewError } = await supabase
+        .from('reviews')
+        .insert({
+          booking_id: booking.id,
+          user_id: user.id,
+          master_id: masterId,
+          service_id: booking.service_id || null,
+          rating: reviewRating,
+          comment: reviewComment || null,
+          is_published: false
+        });
 
-    const { data: allBookings, error } = await supabase
-      .from('bookings')
-      .select(`*, services(name), masters(name, photo_url)`)
-      .or(filters.join(','))
-      .order('booking_date', { ascending: false });
+      if (reviewError) throw reviewError;
 
-    console.log('📋 Найдено записей:', allBookings?.length, allBookings);
+      const { error: updateError } = await supabase
+        .from('bookings')
+        .update({ has_review: true })
+        .eq('id', booking.id);
 
-    if (error) {
-      console.error('❌ Ошибка загрузки записей:', error);
-    } else if (allBookings) {
-      const upcoming = allBookings.filter(b => 
-        b.booking_date >= today && b.status !== 'cancelled' && b.status !== 'completed'
-      );
-      const past = allBookings.filter(b => 
-        b.booking_date < today || b.status === 'completed' || b.status === 'cancelled'
-      );
-      //
-      setUpcomingBookings(upcoming);
-      setPastBookings(past);
+      if (updateError) throw updateError;
+
+      console.log('✅ Отзыв отправлен!');
       
-      const completedCount = allBookings.filter(b => b.status === 'completed').length;
-      setLoyaltyStamps(completedCount % 5);
+      setPastBookings(prev => 
+        prev.map(b => b.id === booking.id ? { ...b, has_review: true } : b)
+      );
       
-      console.log('✅ Предстоящие:', upcoming.length, 'История:', past.length);
+      loadMyReviews();
+      setModal({ type: null });
+      showNotify('Спасибо за отзыв!');
+      
+    } catch (error: any) {
+      console.error('❌ Ошибка отправки отзыва:', error);
+      showNotify('Ошибка при отправке отзыва');
+    } finally {
+      setSubmittingReview(false);
     }
-  } catch (error) {
-    console.error('❌ Ошибка:', error);
-  } finally {
-    setLoading(false);
-  }
-};
-
+  };
 
   const menuItems = [
     { id: 'bookings', label: 'Мои записи', icon: <Calendar size={20} /> },
@@ -323,7 +415,6 @@ const ClientAccount: React.FC<ClientAccountProps> = ({ onHomeClick, onBookClick,
         <aside className={`${isMenuOpen ? 'block' : 'hidden'} lg:block w-full lg:w-80 space-y-4 shrink-0`}>
           <div className="bg-white rounded-[2.5rem] p-8 shadow-sm border border-[#E8C4B8]/30">
             <div className="flex flex-col items-center text-center mb-8">
-              {/* Avatar Upload */}
               <div className="relative mb-4 group">
                 <input
                   type="file"
@@ -459,10 +550,28 @@ const ClientAccount: React.FC<ClientAccountProps> = ({ onHomeClick, onBookClick,
                           <p className="text-sm font-bold text-[#4A3728]">{formatDate(b.booking_date)}, {b.booking_time}</p>
                           <p className="text-xs text-[#8B6F5C]">{b.services?.name || 'Услуга'} • {b.masters?.name || 'Мастер'}</p>
                         </div>
-                        <div className="flex text-[#C49A7C]">
-                          <Star size={12} className="fill-[#C49A7C]" />
-                          <Star size={12} className="fill-[#C49A7C]" />
-                          <Star size={12} className="fill-[#C49A7C]" />
+                        <div className="flex items-center space-x-3">
+                          {/* Кнопка отзыва */}
+                          {b.status === 'completed' && !b.has_review && b.masters && (
+                            <button
+                              onClick={() => openReviewModal(b)}
+                              className="flex items-center space-x-1 text-xs bg-[#D4A69A] text-white px-3 py-1.5 rounded-lg hover:bg-[#8B6F5C] transition-all"
+                            >
+                              <MessageSquare size={12} />
+                              <span>Отзыв</span>
+                            </button>
+                          )}
+                          {b.has_review && (
+                            <span className="text-xs text-green-600 font-medium flex items-center">
+                              <Star size={12} className="mr-1" fill="currentColor" />
+                              Отзыв оставлен
+                            </span>
+                          )}
+                          <div className="flex text-[#C49A7C]">
+                            {[1,2,3,4,5].map(s => (
+                              <Star key={s} size={12} className={b.has_review ? "fill-[#C49A7C]" : ""} />
+                            ))}
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -528,6 +637,7 @@ const ClientAccount: React.FC<ClientAccountProps> = ({ onHomeClick, onBookClick,
                         <th className="px-8 py-5">Мастер</th>
                         <th className="px-8 py-5">Сумма</th>
                         <th className="px-8 py-5">Статус</th>
+                        <th className="px-8 py-5">Отзыв</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[#E8C4B8]/30">
@@ -546,6 +656,20 @@ const ClientAccount: React.FC<ClientAccountProps> = ({ onHomeClick, onBookClick,
                               {b.status === 'completed' ? 'Завершено' : b.status === 'cancelled' ? 'Отменено' : 'Ожидает'}
                             </span>
                           </td>
+                          <td className="px-8 py-6">
+                            {b.status === 'completed' && !b.has_review && b.masters ? (
+                              <button
+                                onClick={() => openReviewModal(b)}
+                                className="text-xs bg-[#D4A69A] text-white px-3 py-1 rounded-lg hover:bg-[#8B6F5C]"
+                              >
+                                Оставить
+                              </button>
+                            ) : b.has_review ? (
+                              <span className="text-xs text-green-600">✓ Оставлен</span>
+                            ) : (
+                              <span className="text-xs text-gray-400">—</span>
+                            )}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -561,15 +685,50 @@ const ClientAccount: React.FC<ClientAccountProps> = ({ onHomeClick, onBookClick,
 
           {!loading && activeTab === 'reviews' && (
             <div className="space-y-6">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-2xl font-rounded font-bold text-[#4A3728]">Мои отзывы</h3>
-                <button className="flex items-center space-x-2 text-[#8B6F5C] font-bold hover:underline">
-                  <Plus size={18} /> <span>Написать новый</span>
-                </button>
-              </div>
-              <div className="bg-white p-12 rounded-[2.5rem] text-center border-2 border-dashed border-[#E8C4B8]">
-                <p className="text-[#4A3728]/60">Функция отзывов скоро появится!</p>
-              </div>
+              <h3 className="text-2xl font-rounded font-bold text-[#4A3728]">Мои отзывы</h3>
+              
+              {myReviews.length > 0 ? (
+                <div className="grid gap-4">
+                  {myReviews.map(review => (
+                    <div key={review.id} className="bg-white p-6 rounded-2xl border border-[#E8C4B8]/30">
+                      <div className="flex justify-between items-start mb-3">
+                        <div>
+                          <p className="font-bold text-[#4A3728]">{review.masters?.name || 'Мастер'}</p>
+                          <p className="text-xs text-[#8B6F5C]">{review.services?.name || ''}</p>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <div className="flex">
+                            {[1,2,3,4,5].map(s => (
+                              <Star 
+                                key={s} 
+                                size={16} 
+                                className={s <= review.rating ? "text-yellow-400 fill-yellow-400" : "text-gray-300"} 
+                              />
+                            ))}
+                          </div>
+                          <span className={`text-[10px] px-2 py-0.5 rounded-full ${
+                            review.is_published ? 'bg-green-100 text-green-600' : 'bg-yellow-100 text-yellow-600'
+                          }`}>
+                            {review.is_published ? 'Опубликован' : 'На модерации'}
+                          </span>
+                        </div>
+                      </div>
+                      {review.comment && (
+                        <p className="text-sm text-[#4A3728]/70 mt-2">{review.comment}</p>
+                      )}
+                      <p className="text-xs text-[#8B6F5C]/60 mt-3">
+                        {new Date(review.created_at).toLocaleDateString('ru-RU')}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="bg-white p-12 rounded-[2.5rem] text-center border-2 border-dashed border-[#E8C4B8]">
+                  <MessageSquare size={48} className="mx-auto text-[#E8C4B8] mb-4" />
+                  <p className="text-[#4A3728]/60 mb-2">У вас пока нет отзывов</p>
+                  <p className="text-sm text-[#8B6F5C]">Оставьте отзыв после завершённого визита</p>
+                </div>
+              )}
             </div>
           )}
 
@@ -661,6 +820,71 @@ const ClientAccount: React.FC<ClientAccountProps> = ({ onHomeClick, onBookClick,
       {modal.type === 'reschedule' && (
         <Modal onClose={() => setModal({ type: null })}>
           <RescheduleForm onSave={(date, time) => handleReschedule(modal.data.id, date, time)} onCancel={() => setModal({ type: null })} />
+        </Modal>
+      )}
+
+      {/* REVIEW MODAL */}
+      {modal.type === 'review' && modal.data && (
+        <Modal onClose={() => setModal({ type: null })}>
+          <div className="space-y-6">
+            <h3 className="text-2xl font-rounded font-bold text-[#4A3728] text-center">Оставить отзыв</h3>
+            
+            <div className="bg-[#F5F0E8] rounded-2xl p-4">
+              <p className="text-sm text-[#8B6F5C]">
+                <span className="font-bold">{modal.data.services?.name}</span>
+                <br />
+                Мастер: {modal.data.masters?.name}
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-bold text-[#4A3728] mb-3 text-center">Ваша оценка</label>
+              <div className="flex justify-center space-x-2">
+                {[1, 2, 3, 4, 5].map((star) => (
+                  <button
+                    key={star}
+                    onClick={() => setReviewRating(star)}
+                    className="p-1 transition-transform hover:scale-110"
+                  >
+                    <Star
+                      size={36}
+                      className={star <= reviewRating ? 'text-yellow-400' : 'text-gray-300'}
+                      fill={star <= reviewRating ? 'currentColor' : 'none'}
+                    />
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-bold text-[#4A3728] mb-2">Комментарий (необязательно)</label>
+              <textarea
+                value={reviewComment}
+                onChange={(e) => setReviewComment(e.target.value)}
+                placeholder="Расскажите о вашем опыте..."
+                rows={4}
+                className="w-full px-4 py-3 rounded-xl bg-[#F5F0E8] border-2 border-transparent focus:border-[#8B6F5C] outline-none resize-none"
+              />
+            </div>
+
+            <button
+              onClick={submitReview}
+              disabled={submittingReview}
+              className="w-full bg-[#8B6F5C] text-white py-4 rounded-xl font-bold hover:bg-[#4A3728] flex items-center justify-center space-x-2 disabled:opacity-50"
+            >
+              {submittingReview ? (
+                <>
+                  <Loader2 className="animate-spin" size={20} />
+                  <span>Отправка...</span>
+                </>
+              ) : (
+                <>
+                  <Send size={18} />
+                  <span>Отправить отзыв</span>
+                </>
+              )}
+            </button>
+          </div>
         </Modal>
       )}
     </div>
