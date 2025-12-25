@@ -397,37 +397,54 @@ const BookingPage: React.FC<BookingPageProps> = ({
         <div className="p-6 md:p-12">
           
           {/* STEP 1: SERVICE */}
-          {step === 1 && (
-            <div className="animate-in slide-in-from-right-4 duration-300">
-              <h2 className="text-2xl md:text-3xl font-rounded font-bold text-[#4A3728] mb-6 md:mb-8 text-center md:text-left">Выберите услугу</h2>
-              <div className="flex space-x-2 mb-6 md:mb-8 overflow-x-auto pb-2 scrollbar-hide">
-                {categories.length > 0 ? (
-                  categories.map(cat => (
-                    <button 
-                      key={cat}
-                      onClick={() => setActiveCategory(cat)}
-                      className={`px-5 py-2 md:px-6 md:py-2.5 rounded-full text-sm md:text-base font-bold whitespace-nowrap transition-all ${
-                        activeCategory === cat ? 'bg-[#D4A69A] text-white shadow-md' : 'bg-[#F5F0E8] text-[#8B6F5C] hover:bg-[#E8C4B8]'
-                      }`}
-                    >
-                      {cat}
-                    </button>
-                  ))
-                ) : (
-                  <p className="text-[#8B6F5C]">Загрузка категорий...</p>
-                )}
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
-                {services.filter(s => s.category === activeCategory).map(service => (
-                  <div 
-                    key={service.id}
-                    onClick={() => setBookingData({ ...bookingData, serviceId: service.id })}
-                    className={`p-5 md:p-6 rounded-2xl md:rounded-3xl border-2 transition-all cursor-pointer group ${
-                      bookingData.serviceId === service.id ? 'border-[#8B6F5C] bg-[#F5F0E8]' : 'border-transparent bg-[ className="text-[#8B6F5C] col-span-2 text-center py-8">Нет услуг в этой категории</p>
-                )}
-              </div>
-            </div>
-          )}
+{step === 1 && (
+  <div className="animate-in slide-in-from-right-4 duration-300">
+    <h2 className="text-2xl md:text-3xl font-rounded font-bold text-[#4A3728] mb-6 md:mb-8 text-center md:text-left">Выберите услугу</h2>
+    <div className="flex space-x-2 mb-6 md:mb-8 overflow-x-auto pb-2 scrollbar-hide">
+      {categories.length > 0 ? (
+        categories.map(cat => (
+          <button 
+            key={cat}
+            onClick={() => setActiveCategory(cat)}
+            className={`px-5 py-2 md:px-6 md:py-2.5 rounded-full text-sm md:text-base font-bold whitespace-nowrap transition-all ${
+              activeCategory === cat ? 'bg-[#D4A69A] text-white shadow-md' : 'bg-[#F5F0E8] text-[#8B6F5C] hover:bg-[#E8C4B8]'
+            }`}
+          >
+            {cat}
+          </button>
+        ))
+      ) : (
+        <p className="text-[#8B6F5C]">Загрузка категорий...</p>
+      )}
+    </div>
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
+      {services.filter(s => s.category === activeCategory).map(service => (
+        <div 
+          key={service.id}
+          onClick={() => setBookingData({ ...bookingData, serviceId: service.id })}
+          className={`p-5 md:p-6 rounded-2xl md:rounded-3xl border-2 transition-all cursor-pointer group ${
+            bookingData.serviceId === service.id 
+              ? 'border-[#8B6F5C] bg-[#F5F0E8]' 
+              : 'border-transparent bg-[#F5F0E8]/50 hover:bg-[#F5F0E8]'
+          }`}
+        >
+          <div className="flex justify-between items-start mb-2">
+            <h3 className="text-lg md:text-xl font-bold text-[#4A3728]">{service.name}</h3>
+            <span className="text-base md:text-lg font-bold text-[#8B6F5C] shrink-0 ml-2">{service.price}</span>
+          </div>
+          <p className="text-xs md:text-sm text-[#4A3728]/60 mb-4 line-clamp-2 md:line-clamp-none">{service.description}</p>
+          <div className="flex items-center text-[10px] md:text-xs text-[#8B6F5C] font-bold">
+            <Clock size={12} className="mr-1 md:w-3.5 md:h-3.5" /> {service.duration}
+          </div>
+        </div>
+      ))}
+      {services.filter(s => s.category === activeCategory).length === 0 && (
+        <p className="text-[#8B6F5C] col-span-2 text-center py-8">Нет услуг в этой категории</p>
+      )}
+    </div>
+  </div>
+)}
+
 
           {/* STEP 2: MASTER */}
           {step === 2 && (
