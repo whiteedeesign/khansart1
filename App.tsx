@@ -31,7 +31,15 @@ const App: React.FC = () => {
   const [loadingAuth, setLoadingAuth] = useState(true);
   
   // Pre-selection state for booking
-  const [preselectedData, setPreselectedData] = useState<{ serviceId?: string, masterId?: string, appliedPromo?: string }>({});
+  const [preselectedData, setPreselectedData] = useState<{ 
+  serviceId?: string, 
+  masterId?: string, 
+  appliedPromo?: string,
+  promoCode?: string,
+  discountPercent?: number,
+  discountAmount?: number 
+}>({});
+
 
   // Проверяем авторизацию при загрузке
   useEffect(() => {
@@ -214,7 +222,17 @@ const App: React.FC = () => {
               onViewDetail={(master) => setSelectedMasterForDetail(master)}
             />
             <Gallery />
-            <Promotions onPromoClick={() => handleBookingClick(undefined, undefined, "5-я процедура в подарок")} />
+            <Promotions onPromoClick={(promoCode, promoName, discountPercent, discountAmount) => {
+  // Сохраняем полные данные акции
+  setPreselectedData({ 
+    appliedPromo: promoName,
+    promoCode,
+    discountPercent,
+    discountAmount
+  });
+  setView('booking');
+}} />
+
             <Reviews />
           </>
         )}
