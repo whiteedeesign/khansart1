@@ -28,6 +28,8 @@ const TIME_SLOTS = ['10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00
 
 const ClientAccount: React.FC<ClientAccountProps> = ({ onHomeClick, onBookClick, user }) => {
   const [activeTab, setActiveTab] = useState<Tab>('bookings');
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   
@@ -70,8 +72,9 @@ const ClientAccount: React.FC<ClientAccountProps> = ({ onHomeClick, onBookClick,
         .single();
 
       if (client) {
-        setClientData(client);
-        setSettingsForm({
+  setClientData(client);
+  setAvatarUrl(client.avatar_url || null);
+  setSettingsForm({
           name: client.name || user.user_metadata?.name || '',
           phone: client.phone || user.user_metadata?.phone || '',
           email: client.email || user.email || ''
@@ -95,6 +98,58 @@ const ClientAccount: React.FC<ClientAccountProps> = ({ onHomeClick, onBookClick,
       });
     }
   };
+
+  // Загрузка аватарки
+const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const file = e.target.files?.[0];
+  if (!file || !user) return;
+
+  // Проверка размера (макс 2MB)
+  if (file.size > 2 * 1024 * 1024) {
+    showNotify("Файл слишком большой (макс. 2MB)");
+    return;
+  }
+
+  setUploadingAvatar(true);
+
+  try {
+    // Генерируем уникальное имя файла
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${user.id}/${Date.now()}.${fileExt}`;
+
+    // Загружаем в Storage
+    const { error: uploadError } = await supabase.storage
+      .from('avatars')
+      .upload(fileName, file, { upsert: true });
+
+    if (uploadError) throw uploadError;
+
+    // Получаем публичный URL
+    const { data: { publicUrl } } = supabase.storage
+      .from('avatars')
+      .getPublicUrl(fileName);
+
+    // Сохраняем URL в таблицу clients
+    const { error: updateError } = await supabase
+      .from('clients')
+      .upsert({
+        id: user.id,
+        avatar_url: publicUrl
+      });
+
+    if (updateError) throw updateError;
+
+    setAvatarUrl(publicUrl);
+    showNotify("Аватар обновлён!");
+    console.log('✅ Аватар загружен:', publicUrl);
+
+  } catch (error: any) {
+    console.error('❌ Ошибка загрузки аватара:', error);
+    showNotify("Ошибка загрузки аватара");
+  } finally {
+    setUploadingAvatar(false);
+  }
+};
 
   const loadBookings = async () => {
     setLoading(true);
@@ -265,13 +320,16 @@ const ClientAccount: React.FC<ClientAccountProps> = ({ onHomeClick, onBookClick,
 
       <div className="flex flex-col lg:flex-row gap-8">
         {/* MOBILE MENU TOGGLE */}
-        <div className="lg:hidden flex items-center justify-between bg-white p-4 rounded-2xl shadow-sm">
-          <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 rounded-full bg-[#8B6F5C] flex items-center justify-center text-white font-bold">
-              {userName.charAt(0).toUpperCase()}
-            </div>
-            <span className="font-bold text-[#4A3728]">{userName}</span>
-          </div>
+        <div className="flex items-center space-x-3">
+  {avatarUrl ? (
+    <img src={avatarUrl} alt="Avatar" className="w-10 h-10 rounded-full object-cover border border-[#E8C4B8]" />
+  ) : (
+    <div className="w-10 h-10 rounded-full bg-[#8B6F5C] flex items-center justify-center text-white font-bold">
+      {userName.charAt(0).toUpperCase()}
+    </div>
+  )}
+  <span className="font-bold text-[#4A3728]">{userName}</span>
+</div>
           <button onClick={() => setIsMenuOpen(!isMenuOpen)} className="text-[#8B6F5C] font-bold">Меню</button>
         </div>
 
@@ -279,13 +337,35 @@ const ClientAccount: React.FC<ClientAccountProps> = ({ onHomeClick, onBookClick,
         <aside className={`${isMenuOpen ? 'block' : 'hidden'} lg:block w-full lg:w-80 space-y-4 shrink-0`}>
           <div className="bg-white rounded-[2.5rem] p-8 shadow-sm border border-[#E8C4B8]/30">
             <div className="flex flex-col items-center text-center mb-8">
-              <div className="relative mb-4 group cursor-pointer">
-                <div className="w-24 h-24 rounded-full bg-[#8B6F5C] flex items-center justify-center text-white text-3xl font-bold border-4 border-[#F5F0E8]">
-                  {userName.charAt(0).toUpperCase()}
-                </div>
-                <div className="absolute inset-0 bg-black/40 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                  <Camera className="text-white" size={24} />
-                </div>
+              <div className="relative mb-4 group">
+  <input
+    type="file"
+    id="avatar-upload"
+    accept="image/*"
+    className="hidden"
+    onChange={handleAvatarUpload}
+  />
+  <label htmlFor="avatar-upload" className="cursor-pointer block">
+    {avatarUrl ? (
+      <img 
+        src={avatarUrl} 
+        alt="Avatar" 
+        className="w-24 h-24 rounded-full object-cover border-4 border-[#F5F0E8]"
+      />
+    ) : (
+      <div className="w-24 h-24 rounded-full bg-[#8B6F5C] flex items-center justify-center text-white text-3xl font-bold border-4 border-[#F5F0E8]">
+        {userName.charAt(0).toUpperCase()}
+      </div>
+    )}
+    <div className="absolute inset-0 bg-black/40 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+      {uploadingAvatar ? (
+        <Loader2 className="text-white animate-spin" size={24} />
+      ) : (
+        <Camera className="text-white" size={24} />
+      )}
+    </div>
+  </label>
+</div>
               </div>
               <h2 className="text-xl font-bold text-[#4A3728]">{userName}</h2>
               <p className="text-sm text-[#8B6F5C]">{userPhone || userEmail}</p>
