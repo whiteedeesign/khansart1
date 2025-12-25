@@ -18,7 +18,7 @@ const Services: React.FC<ServicesProps> = ({ onServiceClick, onShowAllClick }) =
         const { data, error } = await supabase
           .from('services')
           .select('*')
-          .eq('is_visible', true)
+          .eq('is_active', true)
           .order('sort_order');
 
         if (error) throw error;
