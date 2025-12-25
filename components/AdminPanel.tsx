@@ -1,10 +1,10 @@
-
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   LayoutDashboard, Calendar, Users, Briefcase, Scissors, 
   Gift, CreditCard, MessageSquare, Image as ImageIcon, 
-  ShieldAlert, Settings, LogOut, Menu, CircleCheck
+  ShieldAlert, Settings, LogOut, Menu, CircleCheck, Loader2, AlertTriangle
 } from 'lucide-react';
+import { supabase } from '../src/lib/supabase';
 
 // Import split components
 import AdminDashboard from './admin/AdminDashboard';
@@ -25,9 +25,13 @@ type AdminTab =
 
 interface AdminPanelProps {
   onHomeClick: () => void;
+  user: any;
 }
 
-const AdminPanel: React.FC<AdminPanelProps> = ({ onHomeClick }) => {
+const AdminPanel: React.FC<AdminPanelProps> = ({ onHomeClick, user }) => {
+  const [loading, setLoading] = useState(true);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [adminRole, setAdminRole] = useState<string>('');
   const [activeTab, setActiveTab] = useState<AdminTab>('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   
@@ -36,6 +40,41 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onHomeClick }) => {
   const showNotify = (msg: string) => {
     setNotification(msg);
     setTimeout(() => setNotification(null), 3000);
+  };
+
+  // Проверка доступа админа
+  useEffect(() => {
+    if (user) {
+      checkAdminAccess();
+    } else {
+      setLoading(false);
+      setIsAdmin(false);
+    }
+  }, [user]);
+
+  const checkAdminAccess = async () => {
+    setLoading(true);
+    try {
+      const { data: adminData, error } = await supabase
+        .from('admins')
+        .select('role')
+        .eq('user_id', user.id)
+        .single();
+
+      if (error || !adminData) {
+        console.log('❌ Не админ:', error?.message);
+        setIsAdmin(false);
+      } else {
+        console.log('✅ Админ:', adminData.role);
+        setIsAdmin(true);
+        setAdminRole(adminData.role);
+      }
+    } catch (error) {
+      console.error('Ошибка проверки админа:', error);
+      setIsAdmin(false);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const menuItems = [
@@ -69,6 +108,41 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onHomeClick }) => {
     }
   };
 
+  // Loading state
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#F5F0E8] flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="animate-spin text-[#8B6F5C] mx-auto mb-4" size={48} />
+          <p className="text-[#8B6F5C]">Проверка доступа...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Не админ
+  if (!isAdmin) {
+    return (
+      <div className="min-h-screen bg-[#F5F0E8] flex items-center justify-center p-6">
+        <div className="max-w-lg w-full bg-white rounded-[2.5rem] p-12 text-center shadow-xl border border-red-200">
+          <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-6">
+            <AlertTriangle className="text-red-500" size={40} />
+          </div>
+          <h2 className="text-2xl font-bold text-[#4A3728] mb-4">Доступ запрещён</h2>
+          <p className="text-[#8B6F5C] mb-8">
+            У вас нет прав администратора. Обратитесь к владельцу системы.
+          </p>
+          <button
+            onClick={onHomeClick}
+            className="w-full bg-[#8B6F5C] text-white py-4 rounded-2xl font-bold hover:bg-[#6B5344] transition-colors"
+          >
+            На главную
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#F5F0E8] flex">
       {/* Toast Notification */}
@@ -95,6 +169,15 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onHomeClick }) => {
             <Menu size={24} />
           </button>
         </div>
+
+        {/* Admin Role Badge */}
+        {isSidebarOpen && adminRole && (
+          <div className="px-8 pb-4">
+            <span className="inline-block bg-[#D4A69A] text-white text-xs px-3 py-1 rounded-full font-bold uppercase">
+              {adminRole}
+            </span>
+          </div>
+        )}
 
         <nav className="flex-grow py-4 overflow-y-auto scrollbar-hide">
           {menuItems.map(item => (
