@@ -1,7 +1,7 @@
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, Check, Calendar as CalendarIcon, Clock, User as UserIcon, Scissors, Star, CircleCheck, X, Gift } from 'lucide-react';
-import { SERVICES, MASTERS, TIME_SLOTS, COLORS } from '../constants';
+import { supabase } from '../src/lib/supabase';
+import { SERVICES as FALLBACK_SERVICES, MASTERS as FALLBACK_MASTERS, TIME_SLOTS, COLORS } from '../constants';
 import { BookingState, Service, Master } from '../types';
 
 interface BookingPageProps {
@@ -13,6 +13,12 @@ interface BookingPageProps {
 
 const BookingPage: React.FC<BookingPageProps> = ({ onHomeClick, initialServiceId, initialMasterId, appliedPromo }) => {
   const [step, setStep] = useState(1);
+  const [services, setServices] = useState<Service[]>(FALLBACK_SERVICES);
+  const [masters, setMasters] = useState<Master[]>(FALLBACK_MASTERS);
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  
   const [bookingData, setBookingData] = useState<BookingState>({
     serviceId: initialServiceId || null,
     masterId: initialMasterId || null,
@@ -28,10 +34,72 @@ const BookingPage: React.FC<BookingPageProps> = ({ onHomeClick, initialServiceId
   });
 
   const [isSuccess, setIsSuccess] = useState(false);
+  const [bookingId, setBookingId] = useState<string | null>(null);
 
   // Categories for Step 1
-  const categories = ['Наращивание', 'Ламинирование', 'Коррекция'];
+  const categories = ['Наращивание', 'Ламинирование', 'Коррекция', 'Оформление'];
   const [activeCategory, setActiveCategory] = useState<string>('Наращивание');
+
+  // Load services and masters from Supabase
+  useEffect(() => {
+    async function loadData() {
+      try {
+        // Load services
+        const { data: servicesData, error: servicesError } = await supabase
+          .from('services')
+          .select(`*, categories (name)`)
+          .eq('is_visible', true)
+          .order('sort_order');
+
+        if (servicesError) throw servicesError;
+
+        if (servicesData && servicesData.length > 0) {
+          const formatted: Service[] = servicesData.map(s => ({
+            id: s.id,
+            name: s.name,
+            price: `от ${s.price}₽`,
+            priceNumber: s.price,
+            duration: s.duration >= 60 
+              ? `${Math.floor(s.duration / 60)}${s.duration % 60 > 0 ? `.${s.duration % 60}` : ''} ч.`
+              : `${s.duration} мин.`,
+            durationMinutes: s.duration,
+            category: s.categories?.name || 'Наращивание',
+            description: s.description || ''
+          }));
+          setServices(formatted);
+          console.log('✅ Услуги для бронирования загружены:', formatted.length);
+        }
+
+        // Load masters
+        const { data: mastersData, error: mastersError } = await supabase
+          .from('masters')
+          .select('*')
+          .eq('is_active', true);
+
+        if (mastersError) throw mastersError;
+
+        if (mastersData && mastersData.length > 0) {
+          const formatted: Master[] = mastersData.map(m => ({
+            id: m.id,
+            name: m.name,
+            role: m.specialization || 'Мастер',
+            image: m.photo_url || 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=400&h=500',
+            experience: m.experience || '',
+            description: m.bio || '',
+            rating: 5.0
+          }));
+          setMasters(formatted);
+          console.log('✅ Мастера для бронирования загружены:', formatted.length);
+        }
+
+      } catch (error) {
+        console.log('⚠️ Используем локальные данные для бронирования');
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadData();
+  }, []);
 
   // Skip steps if data is pre-selected
   useEffect(() => {
@@ -44,10 +112,10 @@ const BookingPage: React.FC<BookingPageProps> = ({ onHomeClick, initialServiceId
     }
     
     if (initialServiceId) {
-      const service = SERVICES.find(s => s.id === initialServiceId);
+      const service = services.find(s => s.id === initialServiceId);
       if (service) setActiveCategory(service.category);
     }
-  }, [initialServiceId, initialMasterId]);
+  }, [initialServiceId, initialMasterId, services]);
 
   const nextStep = () => setStep(s => Math.min(s + 1, 5));
   const prevStep = () => setStep(s => Math.max(s - 1, 1));
@@ -63,13 +131,72 @@ const BookingPage: React.FC<BookingPageProps> = ({ onHomeClick, initialServiceId
     return dates;
   }, []);
 
-  const selectedService = SERVICES.find(s => s.id === bookingData.serviceId);
+  const selectedService = services.find(s => s.id === bookingData.serviceId);
   const selectedMaster = bookingData.masterId === 'any' 
     ? { name: 'Любой свободный мастер', role: 'Мастер', id: 'any', image: '' }
-    : MASTERS.find(m => m.id === bookingData.masterId);
+    : masters.find(m => m.id === bookingData.masterId);
 
-  const handleSubmit = () => {
-    setIsSuccess(true);
+  // Convert date string to ISO format for database
+  const parseBookingDate = (dateStr: string, timeStr: string): string => {
+    const months: { [key: string]: number } = {
+      'января': 0, 'февраля': 1, 'марта': 2, 'апреля': 3,
+      'мая': 4, 'июня': 5, 'июля': 6, 'августа': 7,
+      'сентября': 8, 'октября': 9, 'ноября': 10, 'декабря': 11
+    };
+    
+    const parts = dateStr.split(' ');
+    const day = parseInt(parts[0]);
+    const month = months[parts[1]] ?? new Date().getMonth();
+    const year = new Date().getFullYear();
+    
+    const [hours, minutes] = timeStr.split(':').map(Number);
+    
+    const date = new Date(year, month, day, hours, minutes);
+    return date.toISOString();
+  };
+
+  const handleSubmit = async () => {
+    setSubmitting(true);
+    setError(null);
+
+    try {
+      // Prepare booking data for Supabase
+      const bookingDateTime = parseBookingDate(bookingData.date!, bookingData.time!);
+      
+      const bookingPayload = {
+        client_name: bookingData.userData.name,
+        client_phone: bookingData.userData.phone,
+        client_email: bookingData.userData.email || null,
+        service_id: bookingData.serviceId,
+        master_id: bookingData.masterId === 'any' ? null : bookingData.masterId,
+        booking_date: bookingDateTime,
+        duration: (selectedService as any)?.durationMinutes || 60,
+        total_price: (selectedService as any)?.priceNumber || 0,
+        status: 'pending',
+        notes: bookingData.userData.comment || null,
+        promo_code: appliedPromo || null
+      };
+
+      console.log('📤 Отправляем запись:', bookingPayload);
+
+      const { data, error: insertError } = await supabase
+        .from('bookings')
+        .insert([bookingPayload])
+        .select()
+        .single();
+
+      if (insertError) throw insertError;
+
+      console.log('✅ Запись создана:', data);
+      setBookingId(data.id);
+      setIsSuccess(true);
+
+    } catch (err: any) {
+      console.error('❌ Ошибка создания записи:', err);
+      setError(err.message || 'Произошла ошибка при создании записи');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleAddToCalendar = () => {
@@ -79,7 +206,6 @@ const BookingPage: React.FC<BookingPageProps> = ({ onHomeClick, initialServiceId
     const eventDescription = `Мастер: ${selectedMaster?.name}. Ждем вас по адресу: ул. Арбат, 25.`;
     const eventLocation = "г. Москва, ул. Арбат, 25, этаж 3, офис 302";
     
-    // Construct Google Calendar URL
     const baseUrl = 'https://www.google.com/calendar/render?action=TEMPLATE';
     const text = encodeURIComponent(eventTitle);
     const details = encodeURIComponent(eventDescription);
@@ -88,6 +214,16 @@ const BookingPage: React.FC<BookingPageProps> = ({ onHomeClick, initialServiceId
     const calendarUrl = `${baseUrl}&text=${text}&details=${details}&location=${location}`;
     window.open(calendarUrl, '_blank');
   };
+
+  // Loading state
+  if (loading) {
+    return (
+      <div className="pt-24 md:pt-32 pb-24 container mx-auto px-4 sm:px-6 text-center">
+        <div className="w-12 h-12 border-4 border-[#8B6F5C] border-t-transparent rounded-full animate-spin mx-auto"></div>
+        <p className="mt-4 text-[#8B6F5C]">Загрузка...</p>
+      </div>
+    );
+  }
 
   if (isSuccess) {
     return (
@@ -98,6 +234,10 @@ const BookingPage: React.FC<BookingPageProps> = ({ onHomeClick, initialServiceId
           </div>
           <h2 className="text-2xl md:text-4xl font-rounded font-bold text-[#4A3728] mb-2 md:mb-4">Вы успешно записаны!</h2>
           <p className="text-lg md:text-xl text-[#8B6F5C] mb-8 md:mb-12">Мы отправили подтверждение на ваш телефон.</p>
+          
+          {bookingId && (
+            <p className="text-sm text-[#8B6F5C]/60 mb-4">Номер записи: {bookingId.slice(0, 8)}...</p>
+          )}
           
           <div className="bg-[#F5F0E8] rounded-2xl md:rounded-3xl p-6 md:p-8 text-left space-y-3 md:space-y-4 mb-8 md:mb-12">
             <p className="text-sm md:text-base"><span className="font-bold">Услуга:</span> {selectedService?.name}</p>
@@ -133,6 +273,14 @@ const BookingPage: React.FC<BookingPageProps> = ({ onHomeClick, initialServiceId
 
   return (
     <div className="pt-24 md:pt-32 pb-24 container mx-auto px-4 sm:px-6 max-w-5xl">
+      {/* Error message */}
+      {error && (
+        <div className="mb-6 bg-red-100 border border-red-300 text-red-700 p-4 rounded-xl flex items-center justify-between">
+          <span>{error}</span>
+          <button onClick={() => setError(null)}><X size={20} /></button>
+        </div>
+      )}
+
       {/* Promotion banner */}
       {appliedPromo && step < 5 && (
         <div className="mb-6 md:mb-8 bg-[#D4A69A] text-white p-3 md:p-4 rounded-xl md:rounded-2xl flex items-center justify-between shadow-lg animate-in slide-in-from-top-4">
@@ -145,7 +293,7 @@ const BookingPage: React.FC<BookingPageProps> = ({ onHomeClick, initialServiceId
               <p className="text-[10px] md:text-xs text-white/80">{appliedPromo}</p>
             </div>
           </div>
-          <div className="text-[10px] md:text-xs font-bold bg-white/20 px-2 py-1 rounded-full uppercase shrink-0">Скидка 100%</div>
+          <div className="text-[10px] md:text-xs font-bold bg-white/20 px-2 py-1 rounded-full uppercase shrink-0">Скидка</div>
         </div>
       )}
 
@@ -194,7 +342,7 @@ const BookingPage: React.FC<BookingPageProps> = ({ onHomeClick, initialServiceId
                 ))}
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
-                {SERVICES.filter(s => s.category === activeCategory).map(service => (
+                {services.filter(s => s.category === activeCategory).map(service => (
                   <div 
                     key={service.id}
                     onClick={() => setBookingData({ ...bookingData, serviceId: service.id })}
@@ -212,6 +360,9 @@ const BookingPage: React.FC<BookingPageProps> = ({ onHomeClick, initialServiceId
                     </div>
                   </div>
                 ))}
+                {services.filter(s => s.category === activeCategory).length === 0 && (
+                  <p className="text-[#8B6F5C] col-span-2 text-center py-8">Нет услуг в этой категории</p>
+                )}
               </div>
             </div>
           )}
@@ -235,7 +386,7 @@ const BookingPage: React.FC<BookingPageProps> = ({ onHomeClick, initialServiceId
                     <p className="text-[10px] md:text-xs text-[#8B6F5C]">Сэкономит время</p>
                   </div>
                 </div>
-                {MASTERS.map(master => (
+                {masters.map(master => (
                   <div 
                     key={master.id}
                     onClick={() => setBookingData({ ...bookingData, masterId: master.id })}
@@ -388,7 +539,7 @@ const BookingPage: React.FC<BookingPageProps> = ({ onHomeClick, initialServiceId
                           <p className="text-xs md:text-sm text-[#4A3728]/60">
                             {appliedPromo ? <span className="line-through mr-2">{selectedService?.price}</span> : null}
                             <span className={appliedPromo ? 'text-[#8B6F5C] font-bold' : ''}>
-                              {appliedPromo ? '0₽ (По акции)' : selectedService?.price}
+                              {appliedPromo ? 'Со скидкой' : selectedService?.price}
                             </span>
                             {' '}• {selectedService?.duration}
                           </p>
@@ -456,6 +607,7 @@ const BookingPage: React.FC<BookingPageProps> = ({ onHomeClick, initialServiceId
             <button 
               onClick={step === 5 ? handleSubmit : nextStep}
               disabled={
+                submitting ||
                 (step === 1 && !bookingData.serviceId) ||
                 (step === 2 && !bookingData.masterId) ||
                 (step === 3 && (!bookingData.date || !bookingData.time)) ||
@@ -463,8 +615,17 @@ const BookingPage: React.FC<BookingPageProps> = ({ onHomeClick, initialServiceId
               }
               className="flex items-center space-x-1.5 md:space-x-2 bg-[#8B6F5C] text-white px-6 md:px-10 py-3 md:py-4 rounded-xl md:rounded-2xl font-bold shadow-xl shadow-[#8B6F5C]/20 hover:bg-[#4A3728] transition-all disabled:opacity-30 disabled:cursor-not-allowed transform active:scale-95 text-sm md:text-base"
             >
-              <span>{step === 5 ? 'Подтвердить' : 'Далее'}</span>
-              {step < 5 && <ChevronRight size={18} className="md:w-5 md:h-5" />}
+              {submitting ? (
+                <>
+                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  <span>Отправка...</span>
+                </>
+              ) : (
+                <>
+                  <span>{step === 5 ? 'Подтвердить' : 'Далее'}</span>
+                  {step < 5 && <ChevronRight size={18} className="md:w-5 md:h-5" />}
+                </>
+              )}
             </button>
           </div>
         </div>
