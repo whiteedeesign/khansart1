@@ -65,7 +65,7 @@ useEffect(() => {
         const { data: servicesData, error: servicesError } = await supabase
           .from('services')
           .select(`*, categories (name)`)
-          .eq('is_visible', true)
+          .eq('is_active', true)
           .order('sort_order');
 
         if (servicesError) throw servicesError;
