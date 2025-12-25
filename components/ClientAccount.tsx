@@ -118,11 +118,14 @@ const ClientAccount: React.FC<ClientAccountProps> = ({ onHomeClick, onBookClick,
         .getPublicUrl(fileName);
 
       const { error: updateError } = await supabase
-        .from('clients')
-        .upsert({
-          id: user.id,
-          avatar_url: publicUrl
-        });
+  .from('clients')
+  .upsert({
+    id: user.id,
+    avatar_url: publicUrl,
+    name: settingsForm.name || user.user_metadata?.name || user.email?.split('@')[0] || 'Пользователь',
+    email: user.email
+  });
+
 
       if (updateError) throw updateError;
 
