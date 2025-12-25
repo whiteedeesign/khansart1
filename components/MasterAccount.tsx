@@ -240,6 +240,11 @@ const MasterAccount: React.FC<MasterAccountProps> = ({ onHomeClick, user }) => {
     return `${days[date.getDay()]}, ${date.getDate()} ${months[date.getMonth()]}`;
   };
 
+  const formatTime = (time: string) => {
+  if (!time) return '';
+  return time.slice(0, 5);
+};
+
   // Форматирование времени (убираем секунды: "11:00:00" -> "11:00")
   const formatTime = (time: string) => {
     if (!time) return '';
@@ -442,7 +447,7 @@ const MasterAccount: React.FC<MasterAccountProps> = ({ onHomeClick, user }) => {
                           <div className={`p-4 rounded-2xl text-center min-w-[80px] ${
                             booking.status === 'completed' ? 'bg-green-100' : 'bg-[#F5F0E8]'
                           }`}>
-                            <p className="text-xl font-bold text-[#4A3728]">{formatTime(booking.booking_time)}</p>
+                            <p className="text-xl font-bold text-[#4A3728]">{formatTime(formatTime(booking.booking_time))}</p>
                             <p className="text-[10px] text-[#8B6F5C]">{booking.duration || 60} мин</p>
                           </div>
 
@@ -537,7 +542,7 @@ const MasterAccount: React.FC<MasterAccountProps> = ({ onHomeClick, user }) => {
                         {bookings.map(booking => (
                           <div key={booking.id} className="p-4 flex items-center justify-between hover:bg-[#F5F0E8]/30">
                             <div className="flex items-center space-x-4">
-                              <span className="font-bold text-[#4A3728] w-16">{formatTime(booking.booking_time)}</span>
+                              <span className="font-bold text-[#4A3728] w-16">{formatTime(formatTime(booking.booking_time))}</span>
                               <div>
                                 <p className="font-medium text-[#4A3728]">{booking.services?.name}</p>
                                 <p className="text-xs text-[#8B6F5C]">{booking.client_name} • {booking.client_phone}</p>
