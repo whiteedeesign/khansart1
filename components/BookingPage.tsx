@@ -9,6 +9,28 @@ interface BookingPageProps {
   initialServiceId?: string;
   initialMasterId?: string;
   appliedPromo?: string;
+  promoCode?: string;
+  discountPercent?: number;
+  discountAmount?: number;
+  user?: any;
+}
+
+const BookingPage: React.FC<BookingPageProps> = ({ 
+  onHomeClick, 
+  initialServiceId, 
+  initialMasterId, 
+  appliedPromo, 
+  promoCode,
+  discountPercent,
+  discountAmount,
+  user 
+}) => {
+
+interface BookingPageProps {
+  onHomeClick: () => void;
+  initialServiceId?: string;
+  initialMasterId?: string;
+  appliedPromo?: string;
   user?: any;
 }
 
@@ -229,6 +251,19 @@ const [activeCategory, setActiveCategory] = useState<string>('');
   }, []);
 
   const selectedService = services.find(s => s.id === bookingData.serviceId);
+  const calculateDiscountedPrice = (originalPrice: number) => {
+  if (discountPercent) {
+    return Math.round(originalPrice * (1 - discountPercent / 100));
+  }
+  if (discountAmount) {
+    return Math.max(0, originalPrice - discountAmount);
+  }
+  return originalPrice;
+};
+
+const originalPrice = selectedService?.priceNumber || 0;
+const finalPrice = appliedPromo ? calculateDiscountedPrice(originalPrice) : originalPrice;
+const discountText = discountPercent ? `-${discountPercent}%` : discountAmount ? `-${discountAmount}₽` : '';
   const selectedMaster = bookingData.masterId === 'any' 
     ? { name: 'Любой свободный мастер', role: 'Мастер', id: 'any', image: '' }
     : masters.find(m => m.id === bookingData.masterId);
