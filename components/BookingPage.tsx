@@ -261,7 +261,7 @@ const bookingPayload = {
   total_price: servicePrice,
   status: 'pending',
   notes: bookingData.userData.comment || null,
-  promo_code: appliedPromo || null
+  promo_code: appliedPromo || null,
   user_id: user?.id || null
 };
 
