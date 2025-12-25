@@ -37,6 +37,23 @@ const BookingPage: React.FC<BookingPageProps> = ({ onHomeClick, initialServiceId
   const [isSuccess, setIsSuccess] = useState(false);
   const [bookingId, setBookingId] = useState<string | null>(null);
 
+  // ✅ Автозаполнение данных авторизованного пользователя
+useEffect(() => {
+  if (user) {
+    console.log('👤 Автозаполнение данных пользователя:', user);
+    setBookingData(prev => ({
+      ...prev,
+      userData: {
+        ...prev.userData,
+        name: user.user_metadata?.name || user.user_metadata?.full_name || prev.userData.name || '',
+        phone: user.user_metadata?.phone || prev.userData.phone || '',
+        email: user.email || prev.userData.email || ''
+      }
+    }));
+  }
+}, [user]);
+
+  
   // Автозаполнение данных для авторизованных пользователей
 useEffect(() => {
   async function loadData() {
