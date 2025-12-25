@@ -39,23 +39,86 @@ const BookingPage: React.FC<BookingPageProps> = ({ onHomeClick, initialServiceId
 
   // Автозаполнение данных для авторизованных пользователей
 useEffect(() => {
-  if (user) {
-    setBookingData(prev => ({
-      ...prev,
-      userData: {
-        ...prev.userData,
-        name: user.user_metadata?.name || prev.userData.name,
-        phone: user.user_metadata?.phone || prev.userData.phone,
-        email: user.email || prev.userData.email,
-      }
-    }));
-    console.log('👤 Данные пользователя подставлены:', user.email);
-  }
-}, [user]);
+  async function loadData() {
+    try {
+      // Load categories FIRST
+      const { data: categoriesData } = await supabase
+        .from('categories')
+        .select('name')
+        .order('sort_order');
 
-  // Categories for Step 1
-  const categories = ['Наращивание', 'Ламинирование', 'Коррекция', 'Оформление'];
-  const [activeCategory, setActiveCategory] = useState<string>('Наращивание');
+      if (categoriesData && categoriesData.length > 0) {
+        const catNames = categoriesData.map(c => c.name);
+        setCategories(catNames);
+        setActiveCategory(catNames[0]); // Set first category as default
+        console.log('✅ Категории загружены:', catNames);
+      }
+
+      // Load services
+      const { data: servicesData, error: servicesError } = await supabase
+        .from('services')
+        .select(`*, categories (name)`)
+        .eq('is_active', true)
+        .order('name');
+
+      if (servicesError) throw servicesError;
+
+      if (servicesData && servicesData.length > 0) {
+        const formatted: Service[] = servicesData.map(s => ({
+          id: s.id,
+          name: s.name,
+          price: `от ${s.price}₽`,
+          priceNumber: s.price,
+          duration: s.duration >= 60 
+            ? `${Math.floor(s.duration / 60)}${s.duration % 60 > 0 ? `.${s.duration % 60}` : ''} ч.`
+            : `${s.duration} мин.`,
+          durationMinutes: s.duration,
+          category: s.categories?.name || 'Другое',
+          description: s.description || ''
+        }));
+        setServices(formatted);
+        console.log('✅ Услуги для бронирования загружены:', formatted.length);
+      }
+
+      // Load masters
+      const { data: mastersData, error: mastersError } = await supabase
+        .from('masters')
+        .select('*')
+        .eq('is_active', true);
+
+      if (mastersError) throw mastersError;
+
+      if (mastersData && mastersData.length > 0) {
+        const formatted: Master[] = mastersData.map(m => ({
+          id: m.id,
+          name: m.name,
+          role: m.specialization || 'Мастер',
+          image: m.photo_url || 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=400&h=500',
+          experience: m.experience || '',
+          description: m.bio || '',
+          rating: m.rating || 5.0
+        }));
+        setMasters(formatted);
+        console.log('✅ Мастера для бронирования загружены:', formatted.length);
+      }
+
+    } catch (error) {
+      console.log('⚠️ Используем локальные данные для бронирования', error);
+      // Fallback categories
+      setCategories(['Наращивание', 'Ламинирование', 'Коррекция', 'Оформление']);
+      setActiveCategory('Наращивание');
+    } finally {
+      setLoading(false);
+    }
+  }
+  loadData();
+}, []);
+
+
+  // Categories for Step 1 - будут загружены из БД
+const [categories, setCategories] = useState<string[]>([]);
+const [activeCategory, setActiveCategory] = useState<string>('');
+
 
   // Load services and masters from Supabase
   useEffect(() => {
@@ -356,7 +419,21 @@ const bookingPayload = {
             <div className="animate-in slide-in-from-right-4 duration-300">
               <h2 className="text-2xl md:text-3xl font-rounded font-bold text-[#4A3728] mb-6 md:mb-8 text-center md:text-left">Выберите услугу</h2>
               <div className="flex space-x-2 mb-6 md:mb-8 overflow-x-auto pb-2 scrollbar-hide">
-                {categories.map(cat => (
+  {categories.length > 0 ? categories.map(cat => (
+    <button 
+      key={cat}
+      onClick={() => setActiveCategory(cat)}
+      className={`px-5 py-2 md:px-6 md:py-2.5 rounded-full text-sm md:text-base font-bold whitespace-nowrap transition-all ${
+        activeCategory === cat ? 'bg-[#D4A69A] text-white shadow-md' : 'bg-[#F5F0E8] text-[#8B6F5C] hover:bg-[#E8C4B8]'
+      }`}
+    >
+      {cat}
+    </button>
+  )) : (
+    <p className="text-[#8B6F5C]">Загрузка категорий...</p>
+  )}
+</div>
+
                   <button 
                     key={cat}
                     onClick={() => setActiveCategory(cat)}
