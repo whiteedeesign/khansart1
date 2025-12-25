@@ -141,38 +141,60 @@ const ClientAccount: React.FC<ClientAccountProps> = ({ onHomeClick, onBookClick,
   };
 
   const loadBookings = async () => {
-    setLoading(true);
-    try {
-      const today = new Date().toISOString().split('T')[0];
-      const userEmail = user.email;
-      const userPhone = user.user_metadata?.phone;
+  setLoading(true);
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    const userEmail = user.email;
+    const userPhone = user.user_metadata?.phone;
+    const userId = user.id;
 
-      let query = supabase
-        .from('bookings')
-        .select(`*, services(name), masters(name, photo_url)`)
-        .or(`client_email.eq.${userEmail},client_phone.eq.${userPhone}`)
-        .order('booking_date', { ascending: false });
+    console.log('🔍 Ищем записи для:', { userId, userEmail, userPhone });
 
-      const { data: allBookings, error } = await query;
+    // Строим фильтр для поиска
+    let filters = [];
+    if (userId) filters.push(`user_id.eq.${userId}`);
+    if (userEmail) filters.push(`client_email.eq.${userEmail}`);
+    if (userPhone) filters.push(`client_phone.eq.${userPhone}`);
 
-      if (error) {
-        console.error('Ошибка загрузки записей:', error);
-      } else if (allBookings) {
-        const upcoming = allBookings.filter(b => b.booking_date >= today && b.status !== 'cancelled');
-        const past = allBookings.filter(b => b.booking_date < today || b.status === 'completed');
-        
-        setUpcomingBookings(upcoming);
-        setPastBookings(past);
-        
-        const completedCount = allBookings.filter(b => b.status === 'completed').length;
-        setLoyaltyStamps(completedCount % 5);
-      }
-    } catch (error) {
-      console.error('Ошибка:', error);
-    } finally {
+    if (filters.length === 0) {
+      console.log('⚠️ Нет данных для поиска записей');
       setLoading(false);
+      return;
     }
-  };
+
+    const { data: allBookings, error } = await supabase
+      .from('bookings')
+      .select(`*, services(name), masters(name, photo_url)`)
+      .or(filters.join(','))
+      .order('booking_date', { ascending: false });
+
+    console.log('📋 Найдено записей:', allBookings?.length, allBookings);
+
+    if (error) {
+      console.error('❌ Ошибка загрузки записей:', error);
+    } else if (allBookings) {
+      const upcoming = allBookings.filter(b => 
+        b.booking_date >= today && b.status !== 'cancelled' && b.status !== 'completed'
+      );
+      const past = allBookings.filter(b => 
+        b.booking_date < today || b.status === 'completed' || b.status === 'cancelled'
+      );
+      
+      setUpcomingBookings(upcoming);
+      setPastBookings(past);
+      
+      const completedCount = allBookings.filter(b => b.status === 'completed').length;
+      setLoyaltyStamps(completedCount % 5);
+      
+      console.log('✅ Предстоящие:', upcoming.length, 'История:', past.length);
+    }
+  } catch (error) {
+    console.error('❌ Ошибка:', error);
+  } finally {
+    setLoading(false);
+  }
+};
+
 
   const menuItems = [
     { id: 'bookings', label: 'Мои записи', icon: <Calendar size={20} /> },
