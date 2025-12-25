@@ -25,22 +25,14 @@ const BookingPage: React.FC<BookingPageProps> = ({
   discountAmount,
   user 
 }) => {
-
-interface BookingPageProps {
-  onHomeClick: () => void;
-  initialServiceId?: string;
-  initialMasterId?: string;
-  appliedPromo?: string;
-  user?: any;
-}
-
-const BookingPage: React.FC<BookingPageProps> = ({ onHomeClick, initialServiceId, initialMasterId, appliedPromo, user }) => {
   const [step, setStep] = useState(1);
   const [services, setServices] = useState<Service[]>(FALLBACK_SERVICES);
   const [masters, setMasters] = useState<Master[]>(FALLBACK_MASTERS);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [categories, setCategories] = useState<string[]>([]);
+  const [activeCategory, setActiveCategory] = useState<string>('');
   
   const [bookingData, setBookingData] = useState<BookingState>({
     serviceId: initialServiceId || null,
@@ -59,110 +51,42 @@ const BookingPage: React.FC<BookingPageProps> = ({ onHomeClick, initialServiceId
   const [isSuccess, setIsSuccess] = useState(false);
   const [bookingId, setBookingId] = useState<string | null>(null);
 
-  // ✅ Автозаполнение данных авторизованного пользователя
-useEffect(() => {
-  if (user) {
-    console.log('👤 Автозаполнение данных пользователя:', user);
-    setBookingData(prev => ({
-      ...prev,
-      userData: {
-        ...prev.userData,
-        name: user.user_metadata?.name || user.user_metadata?.full_name || prev.userData.name || '',
-        phone: user.user_metadata?.phone || prev.userData.phone || '',
-        email: user.email || prev.userData.email || ''
-      }
-    }));
-  }
-}, [user]);
-
-  
-  // Автозаполнение данных для авторизованных пользователей
-useEffect(() => {
-  async function loadData() {
-    try {
-      // Load categories FIRST
-      const { data: categoriesData } = await supabase
-        .from('categories')
-        .select('name')
-        .order('sort_order');
-
-      if (categoriesData && categoriesData.length > 0) {
-        const catNames = categoriesData.map(c => c.name);
-        setCategories(catNames);
-        setActiveCategory(catNames[0]); // Set first category as default
-        console.log('✅ Категории загружены:', catNames);
-      }
-
-      // Load services
-      const { data: servicesData, error: servicesError } = await supabase
-        .from('services')
-        .select(`*, categories (name)`)
-        .eq('is_active', true)
-        .order('name');
-
-      if (servicesError) throw servicesError;
-
-      if (servicesData && servicesData.length > 0) {
-        const formatted: Service[] = servicesData.map(s => ({
-          id: s.id,
-          name: s.name,
-          price: `от ${s.price}₽`,
-          priceNumber: s.price,
-          duration: s.duration >= 60 
-            ? `${Math.floor(s.duration / 60)}${s.duration % 60 > 0 ? `.${s.duration % 60}` : ''} ч.`
-            : `${s.duration} мин.`,
-          durationMinutes: s.duration,
-          category: s.categories?.name || 'Другое',
-          description: s.description || ''
-        }));
-        setServices(formatted);
-        console.log('✅ Услуги для бронирования загружены:', formatted.length);
-      }
-
-      // Load masters
-      const { data: mastersData, error: mastersError } = await supabase
-        .from('masters')
-        .select('*')
-        .eq('is_active', true);
-
-      if (mastersError) throw mastersError;
-
-      if (mastersData && mastersData.length > 0) {
-        const formatted: Master[] = mastersData.map(m => ({
-          id: m.id,
-          name: m.name,
-          role: m.specialization || 'Мастер',
-          image: m.photo_url || 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=400&h=500',
-          experience: m.experience || '',
-          description: m.bio || '',
-          rating: m.rating || 5.0
-        }));
-        setMasters(formatted);
-        console.log('✅ Мастера для бронирования загружены:', formatted.length);
-      }
-
-    } catch (error) {
-      console.log('⚠️ Используем локальные данные для бронирования', error);
-      // Fallback categories
-      setCategories(['Наращивание', 'Ламинирование', 'Коррекция', 'Оформление']);
-      setActiveCategory('Наращивание');
-    } finally {
-      setLoading(false);
+  // Автозаполнение данных авторизованного пользователя
+  useEffect(() => {
+    if (user) {
+      console.log('👤 Автозаполнение данных пользователя:', user);
+      setBookingData(prev => ({
+        ...prev,
+        userData: {
+          ...prev.userData,
+          name: user.user_metadata?.name || user.user_metadata?.full_name || prev.userData.name || '',
+          phone: user.user_metadata?.phone || prev.userData.phone || '',
+          email: user.email || prev.userData.email || ''
+        }
+      }));
     }
-  }
-  loadData();
-}, []);
+  }, [user]);
 
-
-  // Categories for Step 1 - будут загружены из БД
-const [categories, setCategories] = useState<string[]>([]);
-const [activeCategory, setActiveCategory] = useState<string>('');
-
-
-  // Load services and masters from Supabase
+  // Загрузка данных из Supabase
   useEffect(() => {
     async function loadData() {
       try {
+        // Load categories FIRST
+        const { data: categoriesData } = await supabase
+          .from('categories')
+          .select('name')
+          .order('sort_order');
+
+        if (categoriesData && categoriesData.length > 0) {
+          const catNames = categoriesData.map(c => c.name);
+          setCategories(catNames);
+          setActiveCategory(catNames[0]);
+          console.log('✅ Категории загружены:', catNames);
+        } else {
+          setCategories(['Наращивание', 'Ламинирование', 'Коррекция', 'Оформление']);
+          setActiveCategory('Наращивание');
+        }
+
         // Load services
         const { data: servicesData, error: servicesError } = await supabase
           .from('services')
@@ -182,7 +106,7 @@ const [activeCategory, setActiveCategory] = useState<string>('');
               ? `${Math.floor(s.duration / 60)}${s.duration % 60 > 0 ? `.${s.duration % 60}` : ''} ч.`
               : `${s.duration} мин.`,
             durationMinutes: s.duration,
-            category: s.categories?.name || 'Наращивание',
+            category: s.categories?.name || 'Другое',
             description: s.description || ''
           }));
           setServices(formatted);
@@ -205,14 +129,16 @@ const [activeCategory, setActiveCategory] = useState<string>('');
             image: m.photo_url || 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=400&h=500',
             experience: m.experience || '',
             description: m.bio || '',
-            rating: 5.0
+            rating: m.rating || 5.0
           }));
           setMasters(formatted);
           console.log('✅ Мастера для бронирования загружены:', formatted.length);
         }
 
       } catch (error) {
-        console.log('⚠️ Используем локальные данные для бронирования');
+        console.log('⚠️ Используем локальные данные для бронирования', error);
+        setCategories(['Наращивание', 'Ламинирование', 'Коррекция', 'Оформление']);
+        setActiveCategory('Наращивание');
       } finally {
         setLoading(false);
       }
@@ -251,19 +177,22 @@ const [activeCategory, setActiveCategory] = useState<string>('');
   }, []);
 
   const selectedService = services.find(s => s.id === bookingData.serviceId);
+  
+  // Расчёт скидки
   const calculateDiscountedPrice = (originalPrice: number) => {
-  if (discountPercent) {
-    return Math.round(originalPrice * (1 - discountPercent / 100));
-  }
-  if (discountAmount) {
-    return Math.max(0, originalPrice - discountAmount);
-  }
-  return originalPrice;
-};
+    if (discountPercent) {
+      return Math.round(originalPrice * (1 - discountPercent / 100));
+    }
+    if (discountAmount) {
+      return Math.max(0, originalPrice - discountAmount);
+    }
+    return originalPrice;
+  };
 
-const originalPrice = selectedService?.priceNumber || 0;
-const finalPrice = appliedPromo ? calculateDiscountedPrice(originalPrice) : originalPrice;
-const discountText = discountPercent ? `-${discountPercent}%` : discountAmount ? `-${discountAmount}₽` : '';
+  const originalPrice = selectedService?.priceNumber || 0;
+  const finalPrice = appliedPromo ? calculateDiscountedPrice(originalPrice) : originalPrice;
+  const discountText = discountPercent ? `-${discountPercent}%` : discountAmount ? `-${discountAmount}₽` : '';
+
   const selectedMaster = bookingData.masterId === 'any' 
     ? { name: 'Любой свободный мастер', role: 'Мастер', id: 'any', image: '' }
     : masters.find(m => m.id === bookingData.masterId);
@@ -292,30 +221,25 @@ const discountText = discountPercent ? `-${discountPercent}%` : discountAmount ?
     setError(null);
 
     try {
-      // Prepare booking data for Supabase
-const bookingDateTime = parseBookingDate(bookingData.date!, bookingData.time!);
+      const bookingDateTime = parseBookingDate(bookingData.date!, bookingData.time!);
 
-// Получаем числовую цену из строки "от 2500₽" → 2500
-const servicePrice = selectedService?.price 
-  ? parseInt(selectedService.price.replace(/[^0-9]/g, '')) 
-  : 0;
-
-const bookingPayload = {
-  client_name: bookingData.userData.name,
-  client_phone: bookingData.userData.phone,
-  client_email: bookingData.userData.email || null,
-  service_id: bookingData.serviceId,
-  master_id: bookingData.masterId === 'any' ? null : bookingData.masterId,
-  booking_date: bookingDateTime.split('T')[0],
-  booking_time: bookingData.time,
-  duration: (selectedService as any)?.durationMinutes || 60,
-  price: servicePrice,
-  total_price: servicePrice,
-  status: 'pending',
-  notes: bookingData.userData.comment || null,
-  promo_code: appliedPromo || null,
-  user_id: user?.id || null
-};
+      const bookingPayload = {
+        client_name: bookingData.userData.name,
+        client_phone: bookingData.userData.phone,
+        client_email: bookingData.userData.email || null,
+        service_id: bookingData.serviceId,
+        master_id: bookingData.masterId === 'any' ? null : bookingData.masterId,
+        booking_date: bookingDateTime.split('T')[0],
+        booking_time: bookingData.time,
+        duration: (selectedService as any)?.durationMinutes || 60,
+        price: originalPrice,
+        total_price: finalPrice,
+        status: 'pending',
+        notes: bookingData.userData.comment || null,
+        promo_code: promoCode || null,
+        user_id: user?.id || null
+      };
+      
       console.log('📤 Отправляем запись:', bookingPayload);
 
       const { data, error: insertError } = await supabase
@@ -383,9 +307,18 @@ const bookingPayload = {
             <p className="text-sm md:text-base"><span className="font-bold">Мастер:</span> {selectedMaster?.name}</p>
             <p className="text-sm md:text-base"><span className="font-bold">Дата и время:</span> {bookingData.date}, {bookingData.time}</p>
             {appliedPromo && (
-              <div className="flex items-center text-[#8B6F5C] font-bold py-2 border-t border-[#E8C4B8] mt-2 text-sm md:text-base">
-                <Gift size={16} className="mr-2 md:w-5 md:h-5" />
-                <span>Акция: {appliedPromo}</span>
+              <div className="flex items-center justify-between text-[#8B6F5C] font-bold py-2 border-t border-[#E8C4B8] mt-2 text-sm md:text-base">
+                <div className="flex items-center">
+                  <Gift size={16} className="mr-2 md:w-5 md:h-5" />
+                  <span>Акция: {appliedPromo}</span>
+                </div>
+                <span className="text-green-600">{discountText}</span>
+              </div>
+            )}
+            {appliedPromo && (
+              <div className="flex justify-between text-sm">
+                <span>Итого со скидкой:</span>
+                <span className="font-bold text-[#8B6F5C]">{finalPrice}₽</span>
               </div>
             )}
           </div>
@@ -432,7 +365,7 @@ const bookingPayload = {
               <p className="text-[10px] md:text-xs text-white/80">{appliedPromo}</p>
             </div>
           </div>
-          <div className="text-[10px] md:text-xs font-bold bg-white/20 px-2 py-1 rounded-full uppercase shrink-0">Скидка</div>
+          <div className="text-sm font-bold bg-white/20 px-3 py-1 rounded-full">{discountText || 'Скидка'}</div>
         </div>
       )}
 
@@ -463,53 +396,38 @@ const bookingPayload = {
       <div className="bg-white rounded-[2rem] md:rounded-[3rem] shadow-xl overflow-hidden border border-[#E8C4B8]/30 mt-4 md:mt-8">
         <div className="p-6 md:p-12">
           
-         {/* STEP 1: SERVICE */}
-{step === 1 && (
-  <div className="animate-in slide-in-from-right-4 duration-300">
-    <h2 className="text-2xl md:text-3xl font-rounded font-bold text-[#4A3728] mb-6 md:mb-8 text-center md:text-left">Выберите услугу</h2>
-    <div className="flex space-x-2 mb-6 md:mb-8 overflow-x-auto pb-2 scrollbar-hide">
-      {categories.length > 0 ? (
-        categories.map(cat => (
-          <button 
-            key={cat}
-            onClick={() => setActiveCategory(cat)}
-            className={`px-5 py-2 md:px-6 md:py-2.5 rounded-full text-sm md:text-base font-bold whitespace-nowrap transition-all ${
-              activeCategory === cat ? 'bg-[#D4A69A] text-white shadow-md' : 'bg-[#F5F0E8] text-[#8B6F5C] hover:bg-[#E8C4B8]'
-            }`}
-          >
-            {cat}
-          </button>
-        ))
-      ) : (
-        <p className="text-[#8B6F5C]">Загрузка категорий...</p>
-      )}
-    </div>
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
-      {services.filter(s => s.category === activeCategory).map(service => (
-        <div 
-          key={service.id}
-          onClick={() => setBookingData({ ...bookingData, serviceId: service.id })}
-          className={`p-5 md:p-6 rounded-2xl md:rounded-3xl border-2 transition-all cursor-pointer group ${
-            bookingData.serviceId === service.id ? 'border-[#8B6F5C] bg-[#F5F0E8]' : 'border-transparent bg-[#F5F0E8]/50 hover:bg-[#F5F0E8]'
-          }`}
-        >
-          <div className="flex justify-between items-start mb-2">
-            <h3 className="text-lg md:text-xl font-bold text-[#4A3728]">{service.name}</h3>
-            <span className="text-base md:text-lg font-bold text-[#8B6F5C] shrink-0 ml-2">{service.price}</span>
-          </div>
-          <p className="text-xs md:text-sm text-[#4A3728]/60 mb-4 line-clamp-2 md:line-clamp-none">{service.description}</p>
-          <div className="flex items-center text-[10px] md:text-xs text-[#8B6F5C] font-bold">
-            <Clock size={12} className="mr-1 md:w-3.5 md:h-3.5" /> {service.duration}
-          </div>
-        </div>
-      ))}
-      {services.filter(s => s.category === activeCategory).length === 0 && (
-        <p className="text-[#8B6F5C] col-span-2 text-center py-8">Нет услуг в этой категории</p>
-      )}
-    </div>
-  </div>
-)}
-
+          {/* STEP 1: SERVICE */}
+          {step === 1 && (
+            <div className="animate-in slide-in-from-right-4 duration-300">
+              <h2 className="text-2xl md:text-3xl font-rounded font-bold text-[#4A3728] mb-6 md:mb-8 text-center md:text-left">Выберите услугу</h2>
+              <div className="flex space-x-2 mb-6 md:mb-8 overflow-x-auto pb-2 scrollbar-hide">
+                {categories.length > 0 ? (
+                  categories.map(cat => (
+                    <button 
+                      key={cat}
+                      onClick={() => setActiveCategory(cat)}
+                      className={`px-5 py-2 md:px-6 md:py-2.5 rounded-full text-sm md:text-base font-bold whitespace-nowrap transition-all ${
+                        activeCategory === cat ? 'bg-[#D4A69A] text-white shadow-md' : 'bg-[#F5F0E8] text-[#8B6F5C] hover:bg-[#E8C4B8]'
+                      }`}
+                    >
+                      {cat}
+                    </button>
+                  ))
+                ) : (
+                  <p className="text-[#8B6F5C]">Загрузка категорий...</p>
+                )}
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
+                {services.filter(s => s.category === activeCategory).map(service => (
+                  <div 
+                    key={service.id}
+                    onClick={() => setBookingData({ ...bookingData, serviceId: service.id })}
+                    className={`p-5 md:p-6 rounded-2xl md:rounded-3xl border-2 transition-all cursor-pointer group ${
+                      bookingData.serviceId === service.id ? 'border-[#8B6F5C] bg-[#F5F0E8]' : 'border-transparent bg-[ className="text-[#8B6F5C] col-span-2 text-center py-8">Нет услуг в этой категории</p>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* STEP 2: MASTER */}
           {step === 2 && (
@@ -677,16 +595,21 @@ const bookingPayload = {
                         <div className="w-10 h-10 md:w-12 md:h-12 bg-white rounded-xl md:rounded-2xl flex items-center justify-center text-[#8B6F5C]">
                           <Scissors size={20} className="md:w-6 md:h-6" />
                         </div>
-                        <div>
+                        <div className="flex-grow">
                           <p className="text-[10px] md:text-xs text-[#8B6F5C] uppercase font-bold tracking-wider">Услуга</p>
                           <p className="text-base md:text-lg font-bold text-[#4A3728]">{selectedService?.name}</p>
-                          <p className="text-xs md:text-sm text-[#4A3728]/60">
-                            {appliedPromo ? <span className="line-through mr-2">{selectedService?.price}</span> : null}
-                            <span className={appliedPromo ? 'text-[#8B6F5C] font-bold' : ''}>
-                              {appliedPromo ? 'Со скидкой' : selectedService?.price}
-                            </span>
-                            {' '}• {selectedService?.duration}
-                          </p>
+                          <div className="text-xs md:text-sm text-[#4A3728]/60 flex items-center gap-2">
+                            {appliedPromo ? (
+                              <>
+                                <span className="line-through">{originalPrice}₽</span>
+                                <span className="text-green-600 font-bold">{finalPrice}₽</span>
+                                <span className="bg-green-100 text-green-600 px-2 py-0.5 rounded text-xs">{discountText}</span>
+                              </>
+                            ) : (
+                              <span>{selectedService?.price}</span>
+                            )}
+                            <span>• {selectedService?.duration}</span>
+                          </div>
                         </div>
                       </div>
                       <div className="flex items-center space-x-4">
@@ -724,10 +647,19 @@ const bookingPayload = {
                         <p className="font-bold text-[#4A3728]">{bookingData.userData.phone || 'Не указан'}</p>
                       </div>
                       {appliedPromo && (
-                        <div className="pt-2 border-t border-[#E8C4B8]">
-                           <div className="flex items-center text-[#8B6F5C] font-bold text-sm">
-                             <Gift size={16} className="mr-1" /> Применена акция
-                           </div>
+                        <div className="pt-4 border-t border-[#E8C4B8]">
+                          <div className="flex items-center text-[#8B6F5C] font-bold text-sm mb-2">
+                            <Gift size={16} className="mr-2" /> Акция применена
+                          </div>
+                          <p className="text-xs text-[#4A3728]/60">{appliedPromo}</p>
+                          <div className="mt-2 flex justify-between items-center">
+                            <span className="text-sm">Скидка:</span>
+                            <span className="font-bold text-green-600">{discountText}</span>
+                          </div>
+                          <div className="mt-1 flex justify-between items-center">
+                            <span className="text-sm font-bold">Итого:</span>
+                            <span className="font-bold text-lg text-[#8B6F5C]">{finalPrice}₽</span>
+                          </div>
                         </div>
                       )}
                     </div>
