@@ -262,6 +262,7 @@ const bookingPayload = {
   status: 'pending',
   notes: bookingData.userData.comment || null,
   promo_code: appliedPromo || null
+  user_id: user?.id || null
 };
 
 
