@@ -13,7 +13,7 @@ interface Promotion {
 }
 
 interface PromotionsProps {
-  onPromoClick?: (promoCode?: string) => void;
+  onPromoClick?: (promoCode: string, promoName: string, discountPercent?: number, discountAmount?: number) => void;
 }
 
 const Promotions: React.FC<PromotionsProps> = ({ onPromoClick }) => {
@@ -23,7 +23,6 @@ const Promotions: React.FC<PromotionsProps> = ({ onPromoClick }) => {
   useEffect(() => {
     async function loadPromotions() {
       try {
-        // Загружаем все активные акции БЕЗ фильтра по датам
         const { data, error } = await supabase
           .from('promotions')
           .select('*')
@@ -33,28 +32,23 @@ const Promotions: React.FC<PromotionsProps> = ({ onPromoClick }) => {
         if (error) throw error;
 
         if (data) {
-          // Фильтруем по датам на клиенте (поддержка null)
           const today = new Date();
           today.setHours(0, 0, 0, 0);
           
           const activePromos = data.filter(promo => {
-            // start_date: если указана, должна быть <= сегодня
             if (promo.start_date) {
               const start = new Date(promo.start_date);
               if (start > today) return false;
             }
-            
-            // end_date: если указана, должна быть >= сегодня
             if (promo.end_date) {
               const end = new Date(promo.end_date);
               if (end < today) return false;
             }
-            
             return true;
           });
           
           setPromotions(activePromos);
-          console.log('✅ Акции загружены:', activePromos.length, 'из', data.length);
+          console.log('✅ Акции загружены:', activePromos.length);
         }
       } catch (error) {
         console.log('⚠️ Ошибка загрузки акций:', error);
@@ -73,10 +67,16 @@ const Promotions: React.FC<PromotionsProps> = ({ onPromoClick }) => {
 
   const formatEndDate = (date: string | null) => {
     if (!date) return 'Бессрочно';
-    return new Date(date).toLocaleDateString('ru-RU', {
-      day: 'numeric',
-      month: 'long'
-    });
+    return new Date(date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
+  };
+
+  const handlePromoClick = (promo: Promotion) => {
+    onPromoClick?.(
+      promo.promo_code || promo.id,
+      promo.name,
+      promo.discount_percent || undefined,
+      promo.discount_amount || undefined
+    );
   };
 
   if (loading) {
@@ -132,7 +132,7 @@ const Promotions: React.FC<PromotionsProps> = ({ onPromoClick }) => {
                   {promo.end_date ? `до ${formatEndDate(promo.end_date)}` : 'Бессрочно'}
                 </span>
                 <button 
-                  onClick={() => onPromoClick?.(promo.promo_code || undefined)}
+                  onClick={() => handlePromoClick(promo)}
                   className="bg-[#8B6F5C] text-white px-5 py-2 rounded-xl text-sm font-medium hover:bg-[#4A3728] transition-colors"
                 >
                   Применить
