@@ -264,10 +264,6 @@ const bookingPayload = {
   promo_code: appliedPromo || null,
   user_id: user?.id || null
 };
-
-
-
-
       console.log('📤 Отправляем запись:', bookingPayload);
 
       const { data, error: insertError } = await supabase
