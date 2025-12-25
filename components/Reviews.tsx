@@ -14,27 +14,41 @@ const Reviews: React.FC = () => {
           .from('reviews')
           .select(`
             *,
-            masters (name)
+            masters(name),
+            bookings(client_name, client_email)
           `)
-          .eq('status', 'published')
-          .order('created_at', { ascending: false });
+          .eq('is_published', true)
+          .order('created_at', { ascending: false })
+          .limit(6);
+
+        console.log('📝 Загрузка отзывов:', { data, error });
 
         if (error) throw error;
 
         if (data && data.length > 0) {
-          const formatted: Review[] = data.map(r => ({
-            id: r.id,
-            author: r.client_name,
-            rating: r.rating,
-            text: r.text || '',
-            date: new Date(r.created_at).toLocaleDateString('ru-RU'),
-            masterName: r.masters?.name || '',
-            status: 'published' as const
-          }));
+          const formatted: Review[] = data.map(r => {
+            // Получаем имя клиента из bookings или формируем из email
+            const clientName = r.bookings?.client_name || 
+                              r.bookings?.client_email?.split('@')[0] || 
+                              'Клиент';
+            
+            return {
+              id: r.id,
+              author: clientName,
+              rating: r.rating,
+              text: r.comment || '',
+              date: new Date(r.created_at).toLocaleDateString('ru-RU'),
+              masterName: r.masters?.name || '',
+              status: 'published' as const
+            };
+          });
           setReviews(formatted);
           console.log('✅ Отзывы загружены из Supabase:', formatted.length);
+        } else {
+          console.log('⚠️ Нет опубликованных отзывов, используем fallback');
         }
       } catch (error) {
+        console.error('❌ Ошибка загрузки отзывов:', error);
         console.log('⚠️ Используем локальные данные для отзывов');
       } finally {
         setLoading(false);
@@ -74,7 +88,9 @@ const Reviews: React.FC = () => {
                     </span>
                   ))}
                 </div>
-                <p className="text-[#4A3728] mb-4 line-clamp-4">{review.text}</p>
+                <p className="text-[#4A3728] mb-4 line-clamp-4">
+                  {review.text || 'Отличный сервис!'}
+                </p>
                 <div className="border-t border-[#E8C4B8] pt-4">
                   <p className="font-semibold text-[#4A3728]">{review.author}</p>
                   <div className="flex items-center justify-between mt-1">
@@ -86,6 +102,13 @@ const Reviews: React.FC = () => {
                 </div>
               </div>
             ))}
+          </div>
+        )}
+
+        {/* Если нет отзывов совсем */}
+        {!loading && reviews.length === 0 && (
+          <div className="text-center py-12">
+            <p className="text-[#8B6F5C]">Пока нет отзывов. Будьте первым!</p>
           </div>
         )}
       </div>
