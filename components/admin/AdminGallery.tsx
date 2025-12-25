@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Image as ImageIcon } from 'lucide-react';
-import { supabase } from '../src/lib/supabase';
+import { supabase } from '../../src/lib/supabase';
 
 interface GalleryItem {
   id: string;
