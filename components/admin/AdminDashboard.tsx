@@ -9,15 +9,20 @@ interface AdminDashboardProps {
   onTabChange: (tab: any) => void;
 }
 
+interface PeriodStats {
+  bookings: number;
+  revenue: number;
+  newClients: number;
+}
+
 interface DashboardStats {
+  day: PeriodStats;
+  week: PeriodStats;
+  month: PeriodStats;
+  totalClients: number;
   todayBookings: number;
   weekBookings: number;
-  monthBookings: number;
-  monthRevenue: number;
-  totalClients: number;
-  newClientsMonth: number;
   pendingReviews: number;
-  cancelledToday: number;
 }
 
 interface MasterLoad {
@@ -30,16 +35,15 @@ interface MasterLoad {
 
 const AdminDashboard: React.FC<AdminDashboardProps> = ({ onTabChange }) => {
   const [loading, setLoading] = useState(true);
-  const [dashPeriod, setDashPeriod] = useState('Месяц');
+  const [dashPeriod, setDashPeriod] = useState<'День' | 'Неделя' | 'Месяц'>('Месяц');
   const [stats, setStats] = useState<DashboardStats>({
+    day: { bookings: 0, revenue: 0, newClients: 0 },
+    week: { bookings: 0, revenue: 0, newClients: 0 },
+    month: { bookings: 0, revenue: 0, newClients: 0 },
+    totalClients: 0,
     todayBookings: 0,
     weekBookings: 0,
-    monthBookings: 0,
-    monthRevenue: 0,
-    totalClients: 0,
-    newClientsMonth: 0,
-    pendingReviews: 0,
-    cancelledToday: 0
+    pendingReviews: 0
   });
   const [masterLoads, setMasterLoads] = useState<MasterLoad[]>([]);
   const [attentionItems, setAttentionItems] = useState<any[]>([]);
@@ -56,10 +60,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onTabChange }) => {
       
       // Начало недели (понедельник)
       const weekStart = new Date(today);
-      weekStart.setDate(today.getDate() - today.getDay() + 1);
+      const dayOfWeek = today.getDay();
+      const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+      weekStart.setDate(today.getDate() + diff);
       const weekStartStr = weekStart.toISOString().split('T')[0];
       
-      // Конец недели
+      // Конец недели (воскресенье)
       const weekEnd = new Date(weekStart);
       weekEnd.setDate(weekStart.getDate() + 6);
       const weekEndStr = weekEnd.toISOString().split('T')[0];
@@ -68,22 +74,47 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onTabChange }) => {
       const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
       const monthStartStr = monthStart.toISOString().split('T')[0];
 
-      // 1. Записи на сегодня
-      const { data: todayBookings } = await supabase
+      // ========== ДАННЫЕ ЗА ДЕНЬ ==========
+      const { data: dayBookings } = await supabase
         .from('bookings')
-        .select('id')
+        .select('id, total_price, price, status')
         .eq('booking_date', todayStr)
         .neq('status', 'cancelled');
 
-      // 2. Записи на неделю
-      const { data: weekBookings } = await supabase
+      const dayRevenue = dayBookings?.reduce((sum, b) => {
+        if (b.status === 'completed') {
+          return sum + (b.total_price || b.price || 0);
+        }
+        return sum;
+      }, 0) || 0;
+
+      const { count: dayNewClients } = await supabase
+        .from('clients')
+        .select('id', { count: 'exact' })
+        .gte('created_at', todayStr + 'T00:00:00')
+        .lte('created_at', todayStr + 'T23:59:59');
+
+      // ========== ДАННЫЕ ЗА НЕДЕЛЮ ==========
+      const { data: weekBookingsData } = await supabase
         .from('bookings')
-        .select('id')
+        .select('id, total_price, price, status')
         .gte('booking_date', weekStartStr)
         .lte('booking_date', weekEndStr)
         .neq('status', 'cancelled');
 
-      // 3. Записи и выручка за месяц
+      const weekRevenue = weekBookingsData?.reduce((sum, b) => {
+        if (b.status === 'completed') {
+          return sum + (b.total_price || b.price || 0);
+        }
+        return sum;
+      }, 0) || 0;
+
+      const { count: weekNewClients } = await supabase
+        .from('clients')
+        .select('id', { count: 'exact' })
+        .gte('created_at', weekStartStr);
+
+      // ========== ДАННЫЕ ЗА МЕСЯЦ ==========
       const { data: monthBookings } = await supabase
         .from('bookings')
         .select('id, total_price, price, status')
@@ -97,35 +128,25 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onTabChange }) => {
         return sum;
       }, 0) || 0;
 
-      // 4. Всего клиентов
-      const { count: totalClients } = await supabase
-        .from('clients')
-        .select('id', { count: 'exact' });
-
-      // 5. Новых клиентов за месяц
-      const { count: newClientsMonth } = await supabase
+      const { count: monthNewClients } = await supabase
         .from('clients')
         .select('id', { count: 'exact' })
         .gte('created_at', monthStartStr);
 
-      // 6. Отзывы на модерации
+      // ========== ОБЩИЕ ДАННЫЕ ==========
+      const { count: totalClients } = await supabase
+        .from('clients')
+        .select('id', { count: 'exact' });
+
       const { data: pendingReviews } = await supabase
         .from('reviews')
         .select('id')
         .eq('status', 'pending');
 
-      // 7. Отменённые сегодня
-      const { data: cancelledToday } = await supabase
-        .from('bookings')
-        .select('id')
-        .eq('booking_date', todayStr)
-        .eq('status', 'cancelled');
-
-      // 8. Загруженность мастеров (записи на текущую неделю)
+      // ========== ЗАГРУЖЕННОСТЬ МАСТЕРОВ ==========
       const { data: masters } = await supabase
         .from('masters')
-        .select('id, name, photo_url')
-        .eq('is_active', true);
+        .select('id, name, photo_url');
 
       const { data: weekMasterBookings } = await supabase
         .from('bookings')
@@ -134,13 +155,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onTabChange }) => {
         .lte('booking_date', weekEndStr)
         .neq('status', 'cancelled');
 
-      // Подсчёт записей по мастерам
       const bookingsByMaster: Record<string, number> = {};
       weekMasterBookings?.forEach(b => {
         bookingsByMaster[b.master_id] = (bookingsByMaster[b.master_id] || 0) + 1;
       });
 
-      // Максимум записей (для расчёта процента)
       const maxBookings = Math.max(...Object.values(bookingsByMaster), 1);
 
       const masterLoadsData: MasterLoad[] = (masters || []).map(m => ({
@@ -151,28 +170,18 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onTabChange }) => {
         loadPercent: Math.round(((bookingsByMaster[m.id] || 0) / maxBookings) * 100)
       })).sort((a, b) => b.bookingsCount - a.bookingsCount);
 
-      // Формируем "Требуют внимания"
+      // ========== ТРЕБУЮТ ВНИМАНИЯ ==========
       const attention: any[] = [];
       
       if ((pendingReviews?.length || 0) > 0) {
         attention.push({
           id: 'reviews',
           type: 'reviews',
-          text: `${pendingReviews?.length} новых отзыва ожидают модерации`,
+          text: `${pendingReviews?.length} отзыва ожидают модерации`,
           icon: <MessageSquare size={16} />
         });
       }
-      
-      if ((cancelledToday?.length || 0) > 0) {
-        attention.push({
-          id: 'cancelled',
-          type: 'bookings',
-          text: `${cancelledToday?.length} записей отменено сегодня`,
-          icon: <Calendar size={16} />
-        });
-      }
 
-      // Записи без подтверждения
       const { data: pendingBookings } = await supabase
         .from('bookings')
         .select('id')
@@ -188,15 +197,42 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onTabChange }) => {
         });
       }
 
+      const { data: cancelledToday } = await supabase
+        .from('bookings')
+        .select('id')
+        .eq('booking_date', todayStr)
+        .eq('status', 'cancelled');
+
+      if ((cancelledToday?.length || 0) > 0) {
+        attention.push({
+          id: 'cancelled',
+          type: 'bookings',
+          text: `${cancelledToday?.length} записей отменено сегодня`,
+          icon: <Calendar size={16} />
+        });
+      }
+
+      // ========== СОХРАНЯЕМ СТАТИСТИКУ ==========
       setStats({
-        todayBookings: todayBookings?.length || 0,
-        weekBookings: weekBookings?.length || 0,
-        monthBookings: monthBookings?.length || 0,
-        monthRevenue,
+        day: {
+          bookings: dayBookings?.length || 0,
+          revenue: dayRevenue,
+          newClients: dayNewClients || 0
+        },
+        week: {
+          bookings: weekBookingsData?.length || 0,
+          revenue: weekRevenue,
+          newClients: weekNewClients || 0
+        },
+        month: {
+          bookings: monthBookings?.length || 0,
+          revenue: monthRevenue,
+          newClients: monthNewClients || 0
+        },
         totalClients: totalClients || 0,
-        newClientsMonth: newClientsMonth || 0,
-        pendingReviews: pendingReviews?.length || 0,
-        cancelledToday: cancelledToday?.length || 0
+        todayBookings: dayBookings?.length || 0,
+        weekBookings: weekBookingsData?.length || 0,
+        pendingReviews: pendingReviews?.length || 0
       });
 
       setMasterLoads(masterLoadsData);
@@ -209,26 +245,24 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onTabChange }) => {
     }
   };
 
+  // Получаем данные для выбранного периода
   const getDisplayStats = () => {
     switch (dashPeriod) {
       case 'День':
-        return {
-          bookings: stats.todayBookings,
-          revenue: Math.round(stats.monthRevenue / 30), // Примерно
-          clients: Math.round(stats.newClientsMonth / 30)
-        };
+        return stats.day;
       case 'Неделя':
-        return {
-          bookings: stats.weekBookings,
-          revenue: Math.round(stats.monthRevenue / 4),
-          clients: Math.round(stats.newClientsMonth / 4)
-        };
+        return stats.week;
+      case 'Месяц':
       default:
-        return {
-          bookings: stats.monthBookings,
-          revenue: stats.monthRevenue,
-          clients: stats.newClientsMonth
-        };
+        return stats.month;
+    }
+  };
+
+  const getPeriodLabel = () => {
+    switch (dashPeriod) {
+      case 'День': return 'за день';
+      case 'Неделя': return 'за неделю';
+      case 'Месяц': return 'за месяц';
     }
   };
 
@@ -262,7 +296,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onTabChange }) => {
           </button>
           <div className="flex items-center space-x-3 text-sm font-bold bg-white p-2 rounded-2xl shadow-sm border border-[#E8C4B8]">
             <div className="flex bg-[#F5F0E8] p-1 rounded-xl">
-              {['День', 'Неделя', 'Месяц'].map(p => (
+              {(['День', 'Неделя', 'Месяц'] as const).map(p => (
                 <button 
                   key={p} 
                   onClick={() => setDashPeriod(p)}
@@ -286,7 +320,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onTabChange }) => {
                 <Calendar className="text-[#8B6F5C]" size={20} />
               </div>
               <p className="text-3xl font-rounded font-bold text-[#4A3728]">{displayStats.bookings}</p>
-              <p className="text-[10px] font-bold text-green-600">за {dashPeriod.toLowerCase()}</p>
+              <p className="text-[10px] font-bold text-green-600">{getPeriodLabel()}</p>
             </div>
 
             <div className="bg-[#4A3728] text-white p-8 rounded-[2.5rem] shadow-sm flex flex-col justify-between h-40">
@@ -299,7 +333,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onTabChange }) => {
                   ? `${Math.round(displayStats.revenue / 1000)}к₽` 
                   : `${displayStats.revenue}₽`}
               </p>
-              <p className="text-[10px] font-bold text-[#E8C4B8]">за {dashPeriod.toLowerCase()}</p>
+              <p className="text-[10px] font-bold text-[#E8C4B8]">{getPeriodLabel()}</p>
             </div>
 
             <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-[#E8C4B8]/30 flex flex-col justify-between h-40">
@@ -307,8 +341,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onTabChange }) => {
                 <p className="text-xs font-bold uppercase tracking-wider text-[#8B6F5C]">Новых клиентов</p>
                 <Users className="text-[#8B6F5C]" size={20} />
               </div>
-              <p className="text-3xl font-rounded font-bold text-[#4A3728]">{displayStats.clients}</p>
-              <p className="text-[10px] font-bold text-green-600">за {dashPeriod.toLowerCase()}</p>
+              <p className="text-3xl font-rounded font-bold text-[#4A3728]">{displayStats.newClients}</p>
+              <p className="text-[10px] font-bold text-green-600">{getPeriodLabel()}</p>
             </div>
           </div>
 
