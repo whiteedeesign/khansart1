@@ -539,65 +539,118 @@ const BookingPage: React.FC<BookingPageProps> = ({
           )}
 
           {/* STEP 4: USER DATA */}
-          {step === 4 && (
-            <div className="animate-in slide-in-from-right-4 duration-300 max-w-xl mx-auto">
-              <h2 className="text-2xl md:text-3xl font-rounded font-bold text-[#4A3728] mb-6 md:mb-8 text-center">Контактные данные</h2>
-              <div className="space-y-4 md:space-y-6">
-                <div className="space-y-1.5 md:space-y-2">
-                  <label className="text-xs md:text-sm font-bold text-[#4A3728]/60 ml-2">Как к вам обращаться?</label>
-                  <input 
-                    type="text" 
-                    placeholder="Ваше имя" 
-                    value={bookingData.userData.name}
-                    onChange={e => setBookingData({ ...bookingData, userData: { ...bookingData.userData, name: e.target.value } })}
-                    className="w-full px-5 py-3.5 md:px-6 md:py-4 rounded-xl md:rounded-2xl bg-[#F5F0E8] border-2 border-transparent focus:border-[#8B6F5C] outline-none transition-all font-medium text-sm md:text-base"
-                  />
-                </div>
-                <div className="space-y-1.5 md:space-y-2">
-                  <label className="text-xs md:text-sm font-bold text-[#4A3728]/60 ml-2">Номер телефона</label>
-                  <input 
-                    type="tel" 
-                    placeholder="+7 (___) ___-__-__" 
-                    value={bookingData.userData.phone}
-                    onChange={e => setBookingData({ ...bookingData, userData: { ...bookingData.userData, phone: e.target.value } })}
-                    className="w-full px-5 py-3.5 md:px-6 md:py-4 rounded-xl md:rounded-2xl bg-[#F5F0E8] border-2 border-transparent focus:border-[#8B6F5C] outline-none transition-all font-medium text-sm md:text-base"
-                  />
-                </div>
-                <div className="space-y-1.5 md:space-y-2">
-                  <label className="text-xs md:text-sm font-bold text-[#4A3728]/60 ml-2">Email (для чека)</label>
-                  <input 
-                    type="email" 
-                    placeholder="example@mail.ru" 
-                    value={bookingData.userData.email}
-                    onChange={e => setBookingData({ ...bookingData, userData: { ...bookingData.userData, email: e.target.value } })}
-                    className="w-full px-5 py-3.5 md:px-6 md:py-4 rounded-xl md:rounded-2xl bg-[#F5F0E8] border-2 border-transparent focus:border-[#8B6F5C] outline-none transition-all font-medium text-sm md:text-base"
-                  />
-                </div>
-                <div className="space-y-1.5 md:space-y-2">
-                  <label className="text-xs md:text-sm font-bold text-[#4A3728]/60 ml-2">Комментарий</label>
-                  <textarea 
-                    placeholder="Ваши пожелания..." 
-                    rows={3}
-                    value={bookingData.userData.comment}
-                    onChange={e => setBookingData({ ...bookingData, userData: { ...bookingData.userData, comment: e.target.value } })}
-                    className="w-full px-5 py-3.5 md:px-6 md:py-4 rounded-xl md:rounded-2xl bg-[#F5F0E8] border-2 border-transparent focus:border-[#8B6F5C] outline-none transition-all resize-none font-medium text-sm md:text-base"
-                  />
-                </div>
-
-                <div className="flex flex-col space-y-3 pt-2 md:pt-4">
-                  <label className="flex items-center space-x-3 cursor-pointer group">
-                    <input 
-                      type="checkbox" 
-                      className="w-5 h-5 rounded-md border-2 border-[#E8C4B8] text-[#8B6F5C] focus:ring-[#8B6F5C]"
-                      checked={bookingData.userData.createAccount}
-                      onChange={e => setBookingData({ ...bookingData, userData: { ...bookingData.userData, createAccount: e.target.checked } })}
-                    />
-                    <span className="text-xs md:text-sm text-[#4A3728] group-hover:text-[#8B6F5C] transition-colors font-medium">Создать аккаунт для карты лояльности</span>
-                  </label>
-                </div>
-              </div>
-            </div>
+{step === 4 && (
+  <div className="animate-in slide-in-from-right-4 duration-300 max-w-xl mx-auto">
+    <h2 className="text-2xl md:text-3xl font-rounded font-bold text-[#4A3728] mb-6 md:mb-8 text-center">Контактные данные</h2>
+    <div className="space-y-4 md:space-y-6">
+      <div className="space-y-1.5 md:space-y-2">
+        <label className="text-xs md:text-sm font-bold text-[#4A3728]/60 ml-2">Как к вам обращаться?</label>
+        <input 
+          type="text" 
+          placeholder="Ваше имя" 
+          value={bookingData.userData.name}
+          onChange={e => setBookingData({ ...bookingData, userData: { ...bookingData.userData, name: e.target.value } })}
+          className="w-full px-5 py-3.5 md:px-6 md:py-4 rounded-xl md:rounded-2xl bg-[#F5F0E8] border-2 border-transparent focus:border-[#8B6F5C] outline-none transition-all font-medium text-sm md:text-base"
+        />
+      </div>
+      <div className="space-y-1.5 md:space-y-2">
+        <label className="text-xs md:text-sm font-bold text-[#4A3728]/60 ml-2">Номер телефона</label>
+        <input 
+          type="tel" 
+          placeholder="+7 (___) ___-__-__" 
+          value={bookingData.userData.phone}
+          onChange={e => setBookingData({ ...bookingData, userData: { ...bookingData.userData, phone: e.target.value } })}
+          className="w-full px-5 py-3.5 md:px-6 md:py-4 rounded-xl md:rounded-2xl bg-[#F5F0E8] border-2 border-transparent focus:border-[#8B6F5C] outline-none transition-all font-medium text-sm md:text-base"
+        />
+      </div>
+      <div className="space-y-1.5 md:space-y-2">
+        <label className="text-xs md:text-sm font-bold text-[#4A3728]/60 ml-2">Email (для чека)</label>
+        <input 
+          type="email" 
+          placeholder="example@mail.ru" 
+          value={bookingData.userData.email}
+          onChange={e => setBookingData({ ...bookingData, userData: { ...bookingData.userData, email: e.target.value } })}
+          className="w-full px-5 py-3.5 md:px-6 md:py-4 rounded-xl md:rounded-2xl bg-[#F5F0E8] border-2 border-transparent focus:border-[#8B6F5C] outline-none transition-all font-medium text-sm md:text-base"
+        />
+      </div>
+      
+      {/* 🎟️ ПРОМОКОД */}
+      <div className="space-y-1.5 md:space-y-2">
+        <label className="text-xs md:text-sm font-bold text-[#4A3728]/60 ml-2">Промокод</label>
+        <div className="flex gap-2">
+          <input 
+            type="text" 
+            placeholder="Введите промокод" 
+            value={manualPromoCode}
+            onChange={e => setManualPromoCode(e.target.value.toUpperCase())}
+            disabled={!!appliedPromoData}
+            className="flex-1 px-5 py-3.5 md:px-6 md:py-4 rounded-xl md:rounded-2xl bg-[#F5F0E8] border-2 border-transparent focus:border-[#8B6F5C] outline-none transition-all font-medium text-sm md:text-base uppercase disabled:opacity-50"
+          />
+          {!appliedPromoData ? (
+            <button
+              type="button"
+              onClick={handleApplyPromoCode}
+              disabled={!manualPromoCode || promoLoading}
+              className="px-5 py-3.5 md:px-6 md:py-4 bg-[#8B6F5C] text-white rounded-xl md:rounded-2xl font-bold hover:bg-[#4A3728] transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              {promoLoading ? (
+                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+              ) : (
+                'Применить'
+              )}
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={handleRemovePromoCode}
+              className="px-5 py-3.5 md:px-6 md:py-4 bg-red-500 text-white rounded-xl md:rounded-2xl font-bold hover:bg-red-600 transition-all"
+            >
+              Удалить
+            </button>
           )}
+        </div>
+        {promoError && (
+          <p className="text-red-500 text-xs md:text-sm ml-2">{promoError}</p>
+        )}
+        {appliedPromoData && (
+          <div className="bg-green-50 border border-green-200 rounded-xl p-3 mt-2 flex items-center gap-2">
+            <Gift size={18} className="text-green-600" />
+            <div>
+              <p className="text-green-700 font-bold text-sm">{appliedPromoData.name}</p>
+              <p className="text-green-600 text-xs">
+                Скидка: {appliedPromoData.discountPercent ? `${appliedPromoData.discountPercent}%` : `${appliedPromoData.discountAmount}₽`}
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="space-y-1.5 md:space-y-2">
+        <label className="text-xs md:text-sm font-bold text-[#4A3728]/60 ml-2">Комментарий</label>
+        <textarea 
+          placeholder="Ваши пожелания..." 
+          rows={3}
+          value={bookingData.userData.comment}
+          onChange={e => setBookingData({ ...bookingData, userData: { ...bookingData.userData, comment: e.target.value } })}
+          className="w-full px-5 py-3.5 md:px-6 md:py-4 rounded-xl md:rounded-2xl bg-[#F5F0E8] border-2 border-transparent focus:border-[#8B6F5C] outline-none transition-all resize-none font-medium text-sm md:text-base"
+        />
+      </div>
+
+      <div className="flex flex-col space-y-3 pt-2 md:pt-4">
+        <label className="flex items-center space-x-3 cursor-pointer group">
+          <input 
+            type="checkbox" 
+            className="w-5 h-5 rounded-md border-2 border-[#E8C4B8] text-[#8B6F5C] focus:ring-[#8B6F5C]"
+            checked={bookingData.userData.createAccount}
+            onChange={e => setBookingData({ ...bookingData, userData: { ...bookingData.userData, createAccount: e.target.checked } })}
+          />
+          <span className="text-xs md:text-sm text-[#4A3728] group-hover:text-[#8B6F5C] transition-colors font-medium">Создать аккаунт для карты лояльности</span>
+        </label>
+      </div>
+    </div>
+  </div>
+)}
+
 
           {/* STEP 5: CONFIRMATION */}
           {step === 5 && (
