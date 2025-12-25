@@ -8,8 +8,8 @@ interface Promotion {
   discount_percent: number | null;
   discount_amount: number | null;
   promo_code: string | null;
-  start_date: string;
-  end_date: string;
+  start_date: string | null;
+  end_date: string | null;
 }
 
 interface PromotionsProps {
@@ -23,24 +23,43 @@ const Promotions: React.FC<PromotionsProps> = ({ onPromoClick }) => {
   useEffect(() => {
     async function loadPromotions() {
       try {
-        const today = new Date().toISOString().split('T')[0];
-        
         const { data, error } = await supabase
           .from('promotions')
           .select('*')
           .eq('is_active', true)
-          .lte('start_date', today)
-          .gte('end_date', today)
           .order('created_at', { ascending: false });
 
         if (error) throw error;
 
         if (data) {
-          setPromotions(data);
-          console.log('✅ Акции загружены из Supabase:', data.length);
+          // Фильтруем по датам на клиенте (более гибко)
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          
+          const activePromos = data.filter(promo => {
+            // Если даты не указаны — показываем
+            if (!promo.start_date && !promo.end_date) return true;
+            
+            // Проверяем start_date
+            if (promo.start_date) {
+              const startDate = new Date(promo.start_date);
+              if (startDate > today) return false; // Ещё не началась
+            }
+            
+            // Проверяем end_date
+            if (promo.end_date) {
+              const endDate = new Date(promo.end_date);
+              if (endDate < today) return false; // Уже закончилась
+            }
+            
+            return true;
+          });
+          
+          setPromotions(activePromos);
+          console.log('✅ Акции загружены:', activePromos.length, 'из', data.length);
         }
       } catch (error) {
-        console.log('⚠️ Ошибка загрузки акций:', error);
+        console.error('❌ Ошибка загрузки акций:', error);
       } finally {
         setLoading(false);
       }
@@ -54,7 +73,8 @@ const Promotions: React.FC<PromotionsProps> = ({ onPromoClick }) => {
     return 'Акция';
   };
 
-  const formatEndDate = (date: string) => {
+  const formatEndDate = (date: string | null) => {
+    if (!date) return 'Бессрочно';
     return new Date(date).toLocaleDateString('ru-RU', {
       day: 'numeric',
       month: 'long'
@@ -111,13 +131,13 @@ const Promotions: React.FC<PromotionsProps> = ({ onPromoClick }) => {
               
               <div className="flex items-center justify-between pt-4 border-t border-[#E8C4B8]">
                 <span className="text-sm text-[#4A3728]/60">
-                  до {formatEndDate(promo.end_date)}
+                  {promo.end_date ? `до ${formatEndDate(promo.end_date)}` : 'Бессрочно'}
                 </span>
                 <button 
                   onClick={() => onPromoClick?.(promo.promo_code || undefined)}
                   className="bg-[#8B6F5C] text-white px-5 py-2 rounded-xl text-sm font-medium hover:bg-[#4A3728] transition-colors"
                 >
-                  Применить
+                  Записаться
                 </button>
               </div>
             </div>
