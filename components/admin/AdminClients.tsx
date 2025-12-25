@@ -1,358 +1,403 @@
-
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
-  Search, Plus, Download, UserMinus, X, Calendar, 
-  MessageSquare, History, CreditCard, ShieldAlert, AlertTriangle, Check, Edit2
+  Users, Search, Phone, Mail, Calendar, Loader2, RefreshCw,
+  Eye, X, ShoppingBag, Clock, Star, UserPlus, Trash2, Edit2
 } from 'lucide-react';
-import { ADMIN_CLIENTS, PAST_BOOKINGS } from '../../constants';
-import { MasterClient } from '../../types';
+import { supabase } from '../../src/lib/supabase';
 
 interface AdminClientsProps {
   onNotify: (msg: string) => void;
 }
 
+interface Client {
+  id: string;
+  user_id: string | null;
+  name: string;
+  phone: string | null;
+  email: string | null;
+  created_at: string;
+  notes?: string;
+}
+
+interface ClientBooking {
+  id: string;
+  booking_date: string;
+  booking_time: string;
+  status: string;
+  total_price: number;
+  price: number;
+  services: { name: string } | null;
+  masters: { name: string } | null;
+}
+
+interface ClientStats {
+  totalBookings: number;
+  completedBookings: number;
+  cancelledBookings: number;
+  totalSpent: number;
+  lastVisit: string | null;
+}
+
 const AdminClients: React.FC<AdminClientsProps> = ({ onNotify }) => {
-  const [clients, setClients] = useState<MasterClient[]>([...ADMIN_CLIENTS]);
-  const [search, setSearch] = useState('');
-  const [selectedClient, setSelectedClient] = useState<MasterClient | null>(null);
-  const [editingClient, setEditingClient] = useState<MasterClient | null>(null);
-  const [showAddForm, setShowAddForm] = useState(false);
-  const [blacklistingClient, setBlacklistingClient] = useState<MasterClient | null>(null);
-  const [blacklistReason, setBlacklistReason] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [clients, setClients] = useState<Client[]>([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [viewClient, setViewClient] = useState<Client | null>(null);
+  const [clientBookings, setClientBookings] = useState<ClientBooking[]>([]);
+  const [clientStats, setClientStats] = useState<ClientStats | null>(null);
+  const [loadingDetails, setLoadingDetails] = useState(false);
 
-  const filtered = useMemo(() => {
-    const s = search.toLowerCase();
-    return clients.filter(c => 
-      c.name.toLowerCase().includes(s) || 
-      c.phone.includes(s) || 
-      (c.email && c.email.toLowerCase().includes(s))
+  useEffect(() => {
+    loadClients();
+  }, []);
+
+  const loadClients = async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('clients')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setClients(data || []);
+    } catch (error) {
+      console.error('Ошибка загрузки клиентов:', error);
+      onNotify('Ошибка загрузки клиентов');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadClientDetails = async (client: Client) => {
+    setViewClient(client);
+    setLoadingDetails(true);
+
+    try {
+      // Load client's bookings
+      const { data: bookings } = await supabase
+        .from('bookings')
+        .select('id, booking_date, booking_time, status, total_price, price, services(name), masters(name)')
+        .or(`client_phone.eq.${client.phone},client_email.eq.${client.email}`)
+        .order('booking_date', { ascending: false })
+        .limit(50);
+
+      setClientBookings(bookings || []);
+
+      // Calculate stats
+      const stats: ClientStats = {
+        totalBookings: bookings?.length || 0,
+        completedBookings: bookings?.filter(b => b.status === 'completed').length || 0,
+        cancelledBookings: bookings?.filter(b => b.status === 'cancelled').length || 0,
+        totalSpent: bookings?.reduce((sum, b) => {
+          if (b.status === 'completed') {
+            return sum + (b.total_price || b.price || 0);
+          }
+          return sum;
+        }, 0) || 0,
+        lastVisit: bookings?.find(b => b.status === 'completed')?.booking_date || null
+      };
+
+      setClientStats(stats);
+    } catch (error) {
+      console.error('Ошибка загрузки деталей:', error);
+    } finally {
+      setLoadingDetails(false);
+    }
+  };
+
+  const deleteClient = async (clientId: string) => {
+    if (!confirm('Удалить этого клиента? Это действие нельзя отменить.')) return;
+
+    try {
+      const { error } = await supabase
+        .from('clients')
+        .delete()
+        .eq('id', clientId);
+
+      if (error) throw error;
+
+      setClients(prev => prev.filter(c => c.id !== clientId));
+      setViewClient(null);
+      onNotify('Клиент удалён');
+    } catch (error) {
+      console.error('Ошибка удаления:', error);
+      onNotify('Ошибка при удалении клиента');
+    }
+  };
+
+  // Filter clients
+  const filteredClients = clients.filter(client => {
+    if (!searchTerm) return true;
+    const search = searchTerm.toLowerCase();
+    return (
+      client.name?.toLowerCase().includes(search) ||
+      client.phone?.includes(searchTerm) ||
+      client.email?.toLowerCase().includes(search)
     );
-  }, [search, clients]);
+  });
 
-  const handleExport = () => {
-    onNotify("База клиентов экспортирована в CSV");
+  const formatDate = (dateStr: string) => {
+    return new Date(dateStr).toLocaleDateString('ru-RU', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric'
+    });
   };
 
-  const handleAddClient = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const formData = new FormData(e.currentTarget);
-    const newClient: MasterClient = {
-      id: Math.random().toString(36).substr(2, 9),
-      name: formData.get('name') as string,
-      phone: formData.get('phone') as string,
-      email: formData.get('email') as string,
-      visits: 0,
-      totalSpent: '0₽',
-      lastVisit: 'Нет визитов',
-      loyaltyStamps: 0,
-      notes: formData.get('notes') as string,
+  const formatTime = (time: string) => time?.slice(0, 5) || '';
+
+  const getStatusBadge = (status: string) => {
+    const styles: Record<string, string> = {
+      pending: 'bg-yellow-100 text-yellow-700',
+      confirmed: 'bg-blue-100 text-blue-700',
+      completed: 'bg-green-100 text-green-700',
+      cancelled: 'bg-red-100 text-red-700'
     };
-    setClients(prev => [newClient, ...prev]);
-    setShowAddForm(false);
-    onNotify("Клиент добавлен в базу");
-  };
-
-  const handleEditClient = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    if (!editingClient) return;
-    const formData = new FormData(e.currentTarget);
-    const updatedClient = {
-      ...editingClient,
-      name: formData.get('name') as string,
-      phone: formData.get('phone') as string,
-      email: formData.get('email') as string,
-      notes: formData.get('notes') as string,
+    const labels: Record<string, string> = {
+      pending: 'Ожидает',
+      confirmed: 'Подтв.',
+      completed: 'Выполнено',
+      cancelled: 'Отменено'
     };
-    setClients(prev => prev.map(c => c.id === editingClient.id ? updatedClient : c));
-    setEditingClient(null);
-    onNotify("Данные клиента обновлены");
+    return (
+      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${styles[status] || 'bg-gray-100'}`}>
+        {labels[status] || status}
+      </span>
+    );
   };
 
-  const handleBlacklistSubmit = () => {
-    if (!blacklistingClient) return;
-    setClients(prev => prev.map(c => 
-      c.id === blacklistingClient.id ? { ...c, isBlacklisted: true, notes: `${c.notes}\n[ЧС: ${blacklistReason}]` } : c
-    ));
-    setBlacklistingClient(null);
-    setBlacklistReason('');
-    onNotify("Клиент добавлен в чёрный список");
-  };
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-32">
+        <div className="text-center">
+          <Loader2 className="animate-spin text-[#8B6F5C] mx-auto mb-4" size={48} />
+          <p className="text-[#8B6F5C]">Загрузка клиентов...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-500 pb-20">
-      <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
+      {/* Header */}
+      <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
         <div>
-          <h2 className="text-3xl font-rounded font-bold text-[#4A3728]">База клиентов</h2>
-          <p className="text-[#8B6F5C] font-medium">Всего в базе: {clients.length} чел.</p>
+          <h2 className="text-3xl font-rounded font-bold text-[#4A3728]">Клиенты</h2>
+          <p className="text-[#8B6F5C] font-medium">База клиентов: {clients.length} человек</p>
         </div>
-        <div className="flex items-center space-x-3 w-full sm:w-auto">
-          <div className="relative flex-grow min-w-[240px]">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-[#8B6F5C]" size={20} />
-            <input 
-              type="text" 
-              placeholder="Поиск по имени, тел. или email..." 
-              value={search} 
-              onChange={e => setSearch(e.target.value)}
-              className="w-full pl-12 pr-6 py-3.5 rounded-2xl bg-white border border-[#E8C4B8] outline-none text-sm font-medium focus:border-[#8B6F5C] transition-all" 
-            />
-          </div>
-          <button 
-            onClick={() => setShowAddForm(true)}
-            className="bg-[#8B6F5C] text-white p-3.5 rounded-2xl shadow-lg hover:bg-[#4A3728] transition-all"
-            title="Добавить клиента"
-          >
-            <Plus size={24} />
-          </button>
-          <button 
-            onClick={handleExport}
-            className="bg-white border border-[#E8C4B8] text-[#8B6F5C] p-3.5 rounded-2xl hover:bg-[#F5F0E8] transition-all"
-            title="Экспорт базы"
-          >
-            <Download size={24} />
-          </button>
-        </div>
+        <button
+          onClick={loadClients}
+          className="flex items-center space-x-2 px-6 py-3 bg-white rounded-xl text-[#8B6F5C] hover:bg-[#F5F0E8] border border-[#E8C4B8] font-bold"
+        >
+          <RefreshCw size={18} />
+          <span>Обновить</span>
+        </button>
       </header>
 
-      <div className="bg-white rounded-[3rem] shadow-sm overflow-hidden border border-[#E8C4B8]/30">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left">
-            <thead className="bg-[#F5F0E8] text-[#8B6F5C] text-[10px] font-bold uppercase tracking-widest">
-              <tr>
-                <th className="px-8 py-5">Клиент</th>
-                <th className="px-8 py-5 text-center">Визитов</th>
-                <th className="px-8 py-5">Последний визит</th>
-                <th className="px-8 py-5">Сумма покупок</th>
-                <th className="px-8 py-5 text-right">Действия</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#E8C4B8]/30">
-              {filtered.map(c => (
-                <tr key={c.id} className={`hover:bg-[#F5F0E8]/30 transition-colors ${c.isBlacklisted ? 'bg-red-50/30 opacity-70' : ''}`}>
-                  <td className="px-8 py-6">
-                    <div className="flex items-center space-x-4">
-                      <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-lg font-bold shadow-inner ${c.isBlacklisted ? 'bg-red-100 text-red-500' : 'bg-[#E8C4B8] text-[#8B6F5C]'}`}>
-                        {c.name.charAt(0)}
-                      </div>
-                      <div>
-                        <div className="flex items-center space-x-2">
-                          <p className="font-bold text-[#4A3728]">{c.name}</p>
-                          {c.isBlacklisted && <ShieldAlert size={14} className="text-red-500" />}
-                        </div>
-                        <p className="text-xs text-[#8B6F5C] font-medium">{c.phone}</p>
-                        {c.email && <p className="text-[10px] text-[#8B6F5C]/60">{c.email}</p>}
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-8 py-6 font-bold text-[#4A3728] text-center">
-                    <div className="inline-flex items-center space-x-1 px-3 py-1 bg-[#F5F0E8] rounded-full text-xs">
-                      <span>{c.visits}</span>
-                    </div>
-                  </td>
-                  <td className="px-8 py-6 text-sm text-[#4A3728]/70 font-medium">{c.lastVisit}</td>
-                  <td className="px-8 py-6 font-bold text-[#8B6F5C]">{c.totalSpent}</td>
-                  <td className="px-8 py-6 text-right">
-                    <div className="flex items-center justify-end space-x-2">
-                      <button 
-                        onClick={() => setEditingClient(c)}
-                        className="p-2 text-[#8B6F5C] hover:bg-[#F5F0E8] rounded-xl transition-colors"
-                        title="Редактировать клиента"
-                      >
-                        <Edit2 size={18} />
-                      </button>
-                      <button 
-                        onClick={() => setSelectedClient(c)}
-                        className="text-xs font-bold text-[#8B6F5C] px-4 py-2 rounded-xl bg-[#F5F0E8] hover:bg-[#8B6F5C] hover:text-white transition-all"
-                      >
-                        Подробнее
-                      </button>
-                      {!c.isBlacklisted && (
-                        <button 
-                          onClick={() => setBlacklistingClient(c)}
-                          className="p-2 text-red-400 hover:bg-red-50 rounded-xl transition-colors"
-                          title="В чёрный список"
-                        >
-                          <UserMinus size={18} />
-                        </button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {filtered.length === 0 && (
-            <div className="py-20 text-center space-y-3">
-              <Search className="mx-auto text-[#E8C4B8]" size={40} />
-              <p className="text-[#8B6F5C] font-bold">Ничего не найдено по вашему запросу</p>
-            </div>
-          )}
+      {/* Search */}
+      <div className="bg-white p-6 rounded-2xl border border-[#E8C4B8]/30">
+        <div className="relative">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-[#8B6F5C]" size={20} />
+          <input
+            type="text"
+            placeholder="Поиск по имени, телефону или email..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-12 pr-4 py-4 border border-[#E8C4B8] rounded-xl focus:outline-none focus:border-[#8B6F5C] font-medium text-lg"
+          />
         </div>
       </div>
 
-      {/* MODAL: EDIT CLIENT */}
-      {editingClient && (
-        <div className="fixed inset-0 z-[160] flex items-center justify-center p-6 bg-[#4A3728]/40 backdrop-blur-sm animate-in fade-in duration-300">
-          <div className="bg-white w-full max-w-xl rounded-[3rem] shadow-2xl p-10 space-y-8 animate-in zoom-in duration-300">
-            <div className="flex justify-between items-center">
-              <h3 className="text-2xl font-rounded font-bold text-[#4A3728]">Редактировать клиента</h3>
-              <button onClick={() => setEditingClient(null)} className="p-2 hover:bg-[#F5F0E8] rounded-full"><X size={28} /></button>
-            </div>
-            <form onSubmit={handleEditClient} className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-[#8B6F5C] uppercase tracking-widest ml-1">Имя</label>
-                  <input required name="name" defaultValue={editingClient.name} type="text" className="w-full px-6 py-4 rounded-2xl bg-[#F5F0E8] outline-none font-bold" />
+      {/* Clients Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {filteredClients.map(client => (
+          <div
+            key={client.id}
+            className="bg-white p-6 rounded-2xl border border-[#E8C4B8]/30 hover:shadow-lg transition-all cursor-pointer group"
+            onClick={() => loadClientDetails(client)}
+          >
+            <div className="flex items-start justify-between mb-4">
+              <div className="flex items-center space-x-4">
+                <div className="w-14 h-14 bg-[#F5F0E8] rounded-full flex items-center justify-center text-[#8B6F5C] font-bold text-xl group-hover:bg-[#8B6F5C] group-hover:text-white transition-colors">
+                  {client.name?.charAt(0)?.toUpperCase() || '?'}
                 </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-[#8B6F5C] uppercase tracking-widest ml-1">Телефон</label>
-                  <input required name="phone" defaultValue={editingClient.phone} type="tel" className="w-full px-6 py-4 rounded-2xl bg-[#F5F0E8] outline-none font-bold" />
-                </div>
-              </div>
-              <div className="space-y-1">
-                <label className="text-[10px] font-bold text-[#8B6F5C] uppercase tracking-widest ml-1">Email</label>
-                <input name="email" defaultValue={editingClient.email} type="email" className="w-full px-6 py-4 rounded-2xl bg-[#F5F0E8] outline-none font-bold" />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[10px] font-bold text-[#8B6F5C] uppercase tracking-widest ml-1">Заметки о клиенте</label>
-                <textarea name="notes" defaultValue={editingClient.notes} className="w-full px-6 py-4 rounded-2xl bg-[#F5F0E8] outline-none min-h-[100px] resize-none" />
-              </div>
-              <div className="flex gap-4">
-                <button type="submit" className="flex-1 bg-[#8B6F5C] text-white py-5 rounded-2xl font-bold shadow-xl hover:bg-[#4A3728] transition-all">Сохранить</button>
-                <button type="button" onClick={() => setEditingClient(null)} className="flex-1 bg-[#F5F0E8] text-[#4A3728] py-5 rounded-2xl font-bold hover:bg-[#E8C4B8] transition-all">Отмена</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL: CLIENT DETAIL */}
-      {selectedClient && (
-        <div className="fixed inset-0 z-[150] flex items-center justify-center p-6 bg-[#4A3728]/40 backdrop-blur-sm animate-in fade-in duration-300">
-          <div className="bg-[#F5F0E8] w-full max-w-3xl rounded-[3rem] shadow-2xl overflow-hidden animate-in zoom-in duration-300">
-            <div className="p-10 space-y-8">
-              <div className="flex justify-between items-start">
-                <div className="flex items-center space-x-6">
-                  <div className="w-24 h-24 rounded-[2rem] bg-[#8B6F5C] text-white flex items-center justify-center text-4xl font-bold shadow-xl">
-                    {selectedClient.name.charAt(0)}
-                  </div>
-                  <div>
-                    <h3 className="text-3xl font-rounded font-bold text-[#4A3728]">{selectedClient.name}</h3>
-                    <p className="text-xl font-bold text-[#8B6F5C]">{selectedClient.phone}</p>
-                    {selectedClient.email && <p className="text-[#8B6F5C]/70">{selectedClient.email}</p>}
-                  </div>
-                </div>
-                <button 
-                  onClick={() => setSelectedClient(null)} 
-                  className="p-3 hover:bg-[#E8C4B8] rounded-full transition-colors text-[#4A3728]"
-                >
-                  <X size={32} />
-                </button>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="bg-white p-6 rounded-3xl text-center shadow-sm border border-[#E8C4B8]/20">
-                  <CreditCard className="mx-auto mb-2 text-[#8B6F5C]" size={20} />
-                  <p className="text-[10px] text-[#8B6F5C] font-bold uppercase mb-1">Всего потрачено</p>
-                  <p className="text-2xl font-bold text-[#4A3728]">{selectedClient.totalSpent}</p>
-                </div>
-                <div className="bg-white p-6 rounded-3xl text-center shadow-sm border border-[#E8C4B8]/20">
-                  <History className="mx-auto mb-2 text-[#8B6F5C]" size={20} />
-                  <p className="text-[10px] text-[#8B6F5C] font-bold uppercase mb-1">Кол-во визитов</p>
-                  <p className="text-2xl font-bold text-[#4A3728]">{selectedClient.visits}</p>
-                </div>
-                <div className="bg-white p-6 rounded-3xl text-center shadow-sm border border-[#E8C4B8]/20">
-                  <Calendar className="mx-auto mb-2 text-[#8B6F5C]" size={20} />
-                  <p className="text-[10px] text-[#8B6F5C] font-bold uppercase mb-1">Последний визит</p>
-                  <p className="text-xl font-bold text-[#4A3728]">{selectedClient.lastVisit}</p>
-                </div>
-              </div>
-
-              <div className="bg-white p-8 rounded-[2.5rem] shadow-sm space-y-4">
-                <h4 className="text-lg font-bold text-[#4A3728] flex items-center">
-                  <MessageSquare size={18} className="mr-2 text-[#8B6F5C]" /> Заметки и история
-                </h4>
-                <div className="space-y-4 max-h-60 overflow-y-auto pr-4 scrollbar-hide">
-                  <div className="p-4 bg-[#F5F0E8] rounded-2xl italic text-sm text-[#4A3728]/70 whitespace-pre-wrap">
-                    {selectedClient.notes || "Нет дополнительных заметок о клиенте"}
-                  </div>
-                  <div className="space-y-3">
-                    <p className="text-xs font-bold text-[#8B6F5C] uppercase tracking-wider border-b border-[#F5F0E8] pb-2">История визитов</p>
-                    {PAST_BOOKINGS.filter(b => b.clientName?.includes(selectedClient.name.split(' ')[0])).map(visit => (
-                      <div key={visit.id} className="flex justify-between items-center text-sm py-2">
-                        <div>
-                          <p className="font-bold text-[#4A3728]">{visit.date}</p>
-                          <p className="text-xs text-[#8B6F5C]">{visit.service} • {visit.master}</p>
-                        </div>
-                        <p className="font-bold text-[#4A3728]">{visit.price}</p>
-                      </div>
-                    ))}
-                  </div>
+                <div>
+                  <h3 className="font-bold text-[#4A3728] text-lg">{client.name || 'Без имени'}</h3>
+                  <p className="text-xs text-[#8B6F5C]">
+                    Клиент с {formatDate(client.created_at)}
+                  </p>
                 </div>
               </div>
             </div>
-          </div>
-        </div>
-      )}
 
-      {/* MODAL: ADD CLIENT */}
-      {showAddForm && (
-        <div className="fixed inset-0 z-[160] flex items-center justify-center p-6 bg-[#4A3728]/40 backdrop-blur-sm animate-in fade-in duration-300">
-          <div className="bg-white w-full max-w-xl rounded-[3rem] shadow-2xl p-10 space-y-8 animate-in zoom-in duration-300">
-            <div className="flex justify-between items-center">
-              <h3 className="text-2xl font-rounded font-bold text-[#4A3728]">Новый клиент</h3>
-              <button onClick={() => setShowAddForm(false)} className="p-2 hover:bg-[#F5F0E8] rounded-full"><X size={28} /></button>
+            <div className="space-y-2">
+              {client.phone && (
+                <div className="flex items-center text-sm text-[#8B6F5C]">
+                  <Phone size={14} className="mr-2" />
+                  <span>{client.phone}</span>
+                </div>
+              )}
+              {client.email && (
+                <div className="flex items-center text-sm text-[#8B6F5C]">
+                  <Mail size={14} className="mr-2" />
+                  <span className="truncate">{client.email}</span>
+                </div>
+              )}
             </div>
-            <form onSubmit={handleAddClient} className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-[#8B6F5C] uppercase tracking-widest ml-1">Имя</label>
-                  <input required name="name" type="text" placeholder="Ирина Сергеевна" className="w-full px-6 py-4 rounded-2xl bg-[#F5F0E8] outline-none font-bold" />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-[#8B6F5C] uppercase tracking-widest ml-1">Телефон</label>
-                  <input required name="phone" type="tel" placeholder="+7 (900) 000-00-00" className="w-full px-6 py-4 rounded-2xl bg-[#F5F0E8] outline-none font-bold" />
-                </div>
-              </div>
-              <div className="space-y-1">
-                <label className="text-[10px] font-bold text-[#8B6F5C] uppercase tracking-widest ml-1">Email</label>
-                <input name="email" type="email" placeholder="example@mail.ru" className="w-full px-6 py-4 rounded-2xl bg-[#F5F0E8] outline-none font-bold" />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[10px] font-bold text-[#8B6F5C] uppercase tracking-widest ml-1">Заметки</label>
-                <textarea name="notes" placeholder="Особенности, предпочтения..." className="w-full px-6 py-4 rounded-2xl bg-[#F5F0E8] outline-none min-h-[100px] resize-none" />
-              </div>
-              <button type="submit" className="w-full bg-[#8B6F5C] text-white py-5 rounded-2xl font-bold shadow-xl hover:bg-[#4A3728] transition-all">Добавить клиента</button>
-            </form>
-          </div>
-        </div>
-      )}
 
-      {/* MODAL: BLACKLIST REASON */}
-      {blacklistingClient && (
-        <div className="fixed inset-0 z-[170] flex items-center justify-center p-6 bg-[#4A3728]/40 backdrop-blur-sm animate-in fade-in duration-300">
-          <div className="bg-white w-full max-w-sm rounded-[3rem] shadow-2xl p-10 space-y-6 text-center animate-in zoom-in duration-300">
-            <div className="w-16 h-16 bg-red-50 text-red-500 rounded-full flex items-center justify-center mx-auto shadow-inner">
-              <ShieldAlert size={32} />
-            </div>
-            <div>
-              <h3 className="text-xl font-bold text-[#4A3728]">В чёрный список?</h3>
-              <p className="text-sm text-[#8B6F5C] mt-2">Клиент: <b>{blacklistingClient.name}</b></p>
-            </div>
-            <textarea 
-              placeholder="Укажите причину блокировки..." 
-              value={blacklistReason}
-              onChange={e => setBlacklistReason(e.target.value)}
-              className="w-full px-6 py-4 rounded-2xl bg-[#F5F0E8] outline-none text-sm min-h-[80px] resize-none"
-            />
-            <div className="flex flex-col gap-2">
-              <button 
-                onClick={handleBlacklistSubmit}
-                disabled={!blacklistReason}
-                className="w-full py-4 bg-red-500 text-white rounded-2xl font-bold shadow-lg hover:bg-red-600 transition-all disabled:opacity-50"
+            <div className="mt-4 pt-4 border-t border-[#E8C4B8]/30 flex items-center justify-between">
+              <button
+                onClick={(e) => { e.stopPropagation(); loadClientDetails(client); }}
+                className="flex items-center space-x-1 text-sm text-[#8B6F5C] hover:text-[#4A3728] font-bold"
               >
-                Подтвердить блок
+                <Eye size={14} />
+                <span>Подробнее</span>
               </button>
-              <button onClick={() => setBlacklistingClient(null)} className="w-full py-4 font-bold text-[#4A3728]">Отмена</button>
+              <button
+                onClick={(e) => { e.stopPropagation(); deleteClient(client.id); }}
+                className="p-2 text-red-400 hover:bg-red-50 rounded-lg transition-colors"
+              >
+                <Trash2 size={16} />
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {filteredClients.length === 0 && (
+        <div className="text-center py-16">
+          <Users className="mx-auto text-[#E8C4B8] mb-4" size={48} />
+          <p className="text-[#8B6F5C] font-bold">Клиентов не найдено</p>
+          <p className="text-sm text-[#8B6F5C]/60">Попробуйте изменить поисковый запрос</p>
+        </div>
+      )}
+
+      {/* Client Details Modal */}
+      {viewClient && (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-[#4A3728]/40 backdrop-blur-sm animate-in fade-in duration-300 overflow-y-auto">
+          <div className="bg-white w-full max-w-2xl rounded-[2.5rem] shadow-2xl p-8 space-y-6 animate-in zoom-in duration-300 my-8">
+            {/* Header */}
+            <div className="flex justify-between items-start">
+              <div className="flex items-center space-x-4">
+                <div className="w-16 h-16 bg-[#8B6F5C] rounded-full flex items-center justify-center text-white font-bold text-2xl">
+                  {viewClient.name?.charAt(0)?.toUpperCase() || '?'}
+                </div>
+                <div>
+                  <h3 className="text-2xl font-rounded font-bold text-[#4A3728]">{viewClient.name}</h3>
+                  <p className="text-sm text-[#8B6F5C]">Клиент с {formatDate(viewClient.created_at)}</p>
+                </div>
+              </div>
+              <button onClick={() => setViewClient(null)} className="p-2 hover:bg-[#F5F0E8] rounded-full">
+                <X size={24} />
+              </button>
+            </div>
+
+            {/* Contact Info */}
+            <div className="grid grid-cols-2 gap-4">
+              {viewClient.phone && (
+                <a
+                  href={`tel:${viewClient.phone}`}
+                  className="flex items-center space-x-3 p-4 bg-[#F5F0E8] rounded-xl hover:bg-[#E8C4B8] transition-colors"
+                >
+                  <Phone className="text-[#8B6F5C]" size={20} />
+                  <span className="font-bold text-[#4A3728]">{viewClient.phone}</span>
+                </a>
+              )}
+              {viewClient.email && (
+                <a
+                  href={`mailto:${viewClient.email}`}
+                  className="flex items-center space-x-3 p-4 bg-[#F5F0E8] rounded-xl hover:bg-[#E8C4B8] transition-colors"
+                >
+                  <Mail className="text-[#8B6F5C]" size={20} />
+                  <span className="font-bold text-[#4A3728] truncate">{viewClient.email}</span>
+                </a>
+              )}
+            </div>
+
+            {/* Stats */}
+            {loadingDetails ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="animate-spin text-[#8B6F5C]" size={32} />
+              </div>
+            ) : clientStats && (
+              <>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="bg-[#F5F0E8] p-4 rounded-xl text-center">
+                    <ShoppingBag className="mx-auto text-[#8B6F5C] mb-2" size={24} />
+                    <p className="text-2xl font-bold text-[#4A3728]">{clientStats.totalBookings}</p>
+                    <p className="text-[10px] font-bold text-[#8B6F5C] uppercase">Всего записей</p>
+                  </div>
+                  <div className="bg-green-50 p-4 rounded-xl text-center">
+                    <Star className="mx-auto text-green-600 mb-2" size={24} />
+                    <p className="text-2xl font-bold text-green-700">{clientStats.completedBookings}</p>
+                    <p className="text-[10px] font-bold text-green-600 uppercase">Выполнено</p>
+                  </div>
+                  <div className="bg-red-50 p-4 rounded-xl text-center">
+                    <X className="mx-auto text-red-500 mb-2" size={24} />
+                    <p className="text-2xl font-bold text-red-600">{clientStats.cancelledBookings}</p>
+                    <p className="text-[10px] font-bold text-red-500 uppercase">Отменено</p>
+                  </div>
+                  <div className="bg-[#4A3728] p-4 rounded-xl text-center">
+                    <p className="text-2xl font-bold text-white">{clientStats.totalSpent.toLocaleString()}₽</p>
+                    <p className="text-[10px] font-bold text-white/60 uppercase">Потрачено</p>
+                  </div>
+                </div>
+
+                {clientStats.lastVisit && (
+                  <div className="flex items-center justify-center space-x-2 text-sm text-[#8B6F5C]">
+                    <Clock size={14} />
+                    <span>Последний визит: {formatDate(clientStats.lastVisit)}</span>
+                  </div>
+                )}
+
+                {/* Booking History */}
+                <div className="space-y-3">
+                  <h4 className="font-bold text-[#4A3728]">История записей</h4>
+                  <div className="max-h-64 overflow-y-auto space-y-2 pr-2">
+                    {clientBookings.length > 0 ? clientBookings.map(booking => (
+                      <div
+                        key={booking.id}
+                        className="flex items-center justify-between p-4 bg-[#F5F0E8]/50 rounded-xl"
+                      >
+                        <div className="flex items-center space-x-4">
+                          <div className="text-center">
+                            <p className="font-bold text-[#4A3728]">{formatDate(booking.booking_date)}</p>
+                            <p className="text-xs text-[#8B6F5C]">{formatTime(booking.booking_time)}</p>
+                          </div>
+                          <div>
+                            <p className="font-medium text-[#4A3728]">{booking.services?.name || 'Услуга'}</p>
+                            <p className="text-xs text-[#8B6F5C]">{booking.masters?.name || 'Мастер'}</p>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-bold text-[#4A3728]">{booking.total_price || booking.price}₽</p>
+                          {getStatusBadge(booking.status)}
+                        </div>
+                      </div>
+                    )) : (
+                      <p className="text-center text-[#8B6F5C] py-8">Нет записей</p>
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* Actions */}
+            <div className="flex gap-4 pt-4 border-t border-[#E8C4B8]/30">
+              <button
+                onClick={() => deleteClient(viewClient.id)}
+                className="flex-1 py-3 bg-red-50 text-red-600 rounded-xl font-bold hover:bg-red-100 flex items-center justify-center space-x-2"
+              >
+                <Trash2 size={18} />
+                <span>Удалить клиента</span>
+              </button>
+              <button
+                onClick={() => setViewClient(null)}
+                className="flex-1 py-3 bg-[#8B6F5C] text-white rounded-xl font-bold hover:bg-[#4A3728]"
+              >
+                Закрыть
+              </button>
             </div>
           </div>
         </div>
