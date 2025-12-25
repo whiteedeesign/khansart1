@@ -10,6 +10,7 @@ interface HeaderProps {
   onMasterClick?: () => void;
   onAdminClick?: () => void;
   user?: any;
+  userAvatar?: string | null;
   onAuthClick?: () => void;
 }
 
@@ -21,6 +22,7 @@ const Header: React.FC<HeaderProps> = ({
   onAdminClick, 
   scrollToSection,
   user,
+  userAvatar,
   onAuthClick
 }) => {
   const [isScrolled, setIsScrolled] = useState(false);
@@ -125,9 +127,17 @@ const Header: React.FC<HeaderProps> = ({
                 onClick={() => setShowUserMenu(!showUserMenu)}
                 className="flex items-center space-x-2 p-2 text-[#4A3728] hover:bg-[#E8C4B8] rounded-full transition-colors"
               >
-                <div className="w-8 h-8 bg-[#8B6F5C] rounded-full flex items-center justify-center text-white text-sm font-bold">
-                  {userName.charAt(0).toUpperCase()}
-                </div>
+                {userAvatar ? (
+  <img 
+    src={userAvatar} 
+    alt="Avatar" 
+    className="w-8 h-8 rounded-full object-cover border border-[#E8C4B8]"
+  />
+) : (
+  <div className="w-8 h-8 bg-[#8B6F5C] rounded-full flex items-center justify-center text-white text-sm font-bold">
+    {userName.charAt(0).toUpperCase()}
+  </div>
+)}
                 <span className="hidden lg:block text-sm font-medium max-w-[100px] truncate">
                   {userName}
                 </span>
