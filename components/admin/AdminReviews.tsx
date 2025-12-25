@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Star, Search, Loader2, RefreshCw, Trash2, Eye, X,
-  CheckCircle, XCircle, MessageSquare, User, Calendar,
-  ThumbsUp, ThumbsDown, Filter
+  Star, Search, Loader2, RefreshCw, Trash2, X,
+  CheckCircle, XCircle, MessageSquare,
+  ThumbsUp, ThumbsDown
 } from 'lucide-react';
 import { supabase } from '../../src/lib/supabase';
 
@@ -12,15 +12,17 @@ interface AdminReviewsProps {
 
 interface Review {
   id: string;
-  client_name: string;
   rating: number;
-  text: string;
-  status: string;
+  comment: string | null;
+  is_published: boolean;
   created_at: string;
-  service_id?: string;
-  master_id?: string;
+  user_id: string;
+  master_id: string;
+  service_id: string | null;
+  booking_id: string | null;
   services?: { name: string } | null;
   masters?: { name: string } | null;
+  bookings?: { client_name: string; client_email: string } | null;
 }
 
 const AdminReviews: React.FC<AdminReviewsProps> = ({ onNotify }) => {
@@ -40,12 +42,17 @@ const AdminReviews: React.FC<AdminReviewsProps> = ({ onNotify }) => {
     try {
       const { data, error } = await supabase
         .from('reviews')
-        .select('*, services(name), masters(name)')
+        .select(`
+          *,
+          services(name),
+          masters(name),
+          bookings(client_name, client_email)
+        `)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
       setReviews(data || []);
-      console.log('✅ Отзывы загружены:', data?.length);
+      console.log('✅ Отзывы загружены:', data?.length, data);
     } catch (error) {
       console.error('Ошибка загрузки отзывов:', error);
       onNotify('Ошибка загрузки отзывов');
@@ -54,26 +61,20 @@ const AdminReviews: React.FC<AdminReviewsProps> = ({ onNotify }) => {
     }
   };
 
-  const updateStatus = async (reviewId: string, newStatus: string) => {
+  const updateStatus = async (reviewId: string, isPublished: boolean) => {
     try {
       const { error } = await supabase
         .from('reviews')
-        .update({ status: newStatus })
+        .update({ is_published: isPublished })
         .eq('id', reviewId);
 
       if (error) throw error;
 
       setReviews(prev =>
-        prev.map(r => r.id === reviewId ? { ...r, status: newStatus } : r)
+        prev.map(r => r.id === reviewId ? { ...r, is_published: isPublished } : r)
       );
 
-      const statusLabels: Record<string, string> = {
-        approved: 'одобрен',
-        rejected: 'отклонён',
-        pending: 'на модерации'
-      };
-
-      onNotify(`Отзыв ${statusLabels[newStatus] || newStatus}`);
+      onNotify(isPublished ? 'Отзыв опубликован' : 'Отзыв скрыт');
       setViewReview(null);
     } catch (error) {
       console.error('Ошибка:', error);
@@ -101,10 +102,23 @@ const AdminReviews: React.FC<AdminReviewsProps> = ({ onNotify }) => {
     }
   };
 
+  // Получаем имя клиента
+  const getClientName = (review: Review): string => {
+    return review.bookings?.client_name || review.bookings?.client_email?.split('@')[0] || 'Аноним';
+  };
+
+  // Конвертируем is_published в статус для фильтрации
+  const getStatus = (review: Review): string => {
+    if (review.is_published === true) return 'approved';
+    if (review.is_published === false) return 'pending';
+    return 'pending';
+  };
+
   // Filtering
   const filteredReviews = reviews.filter(review => {
     // Status filter
-    if (statusFilter !== 'all' && review.status !== statusFilter) return false;
+    const status = getStatus(review);
+    if (statusFilter !== 'all' && status !== statusFilter) return false;
 
     // Rating filter
     if (ratingFilter !== 'all' && review.rating !== parseInt(ratingFilter)) return false;
@@ -112,8 +126,9 @@ const AdminReviews: React.FC<AdminReviewsProps> = ({ onNotify }) => {
     // Search
     if (searchTerm) {
       const search = searchTerm.toLowerCase();
-      const matchesName = review.client_name?.toLowerCase().includes(search);
-      const matchesText = review.text?.toLowerCase().includes(search);
+      const clientName = getClientName(review).toLowerCase();
+      const matchesName = clientName.includes(search);
+      const matchesText = review.comment?.toLowerCase().includes(search);
       if (!matchesName && !matchesText) return false;
     }
 
@@ -130,20 +145,13 @@ const AdminReviews: React.FC<AdminReviewsProps> = ({ onNotify }) => {
     });
   };
 
-  const getStatusBadge = (status: string) => {
-    const styles: Record<string, string> = {
-      pending: 'bg-yellow-100 text-yellow-700',
-      approved: 'bg-green-100 text-green-700',
-      rejected: 'bg-red-100 text-red-700'
-    };
-    const labels: Record<string, string> = {
-      pending: 'На модерации',
-      approved: 'Одобрен',
-      rejected: 'Отклонён'
-    };
+  const getStatusBadge = (review: Review) => {
+    const isApproved = review.is_published === true;
     return (
-      <span className={`px-3 py-1 rounded-full text-xs font-bold ${styles[status] || 'bg-gray-100 text-gray-700'}`}>
-        {labels[status] || status}
+      <span className={`px-3 py-1 rounded-full text-xs font-bold ${
+        isApproved ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
+      }`}>
+        {isApproved ? 'Опубликован' : 'На модерации'}
       </span>
     );
   };
@@ -165,9 +173,9 @@ const AdminReviews: React.FC<AdminReviewsProps> = ({ onNotify }) => {
   // Stats
   const stats = {
     total: reviews.length,
-    pending: reviews.filter(r => r.status === 'pending').length,
-    approved: reviews.filter(r => r.status === 'approved').length,
-    rejected: reviews.filter(r => r.status === 'rejected').length,
+    pending: reviews.filter(r => r.is_published === false).length,
+    approved: reviews.filter(r => r.is_published === true).length,
+    rejected: 0,
     avgRating: reviews.length > 0 
       ? (reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length).toFixed(1)
       : '0.0'
@@ -213,7 +221,7 @@ const AdminReviews: React.FC<AdminReviewsProps> = ({ onNotify }) => {
         </div>
         <div className="bg-green-50 p-4 rounded-2xl text-center border border-green-200">
           <p className="text-2xl font-bold text-green-700">{stats.approved}</p>
-          <p className="text-[10px] font-bold text-green-600 uppercase">Одобрено</p>
+          <p className="text-[10px] font-bold text-green-600 uppercase">Опубликовано</p>
         </div>
         <div className="bg-red-50 p-4 rounded-2xl text-center border border-red-200">
           <p className="text-2xl font-bold text-red-700">{stats.rejected}</p>
@@ -250,8 +258,7 @@ const AdminReviews: React.FC<AdminReviewsProps> = ({ onNotify }) => {
         >
           <option value="all">Все статусы</option>
           <option value="pending">На модерации</option>
-          <option value="approved">Одобренные</option>
-          <option value="rejected">Отклонённые</option>
+          <option value="approved">Опубликованные</option>
         </select>
 
         {/* Rating Filter */}
@@ -285,71 +292,74 @@ const AdminReviews: React.FC<AdminReviewsProps> = ({ onNotify }) => {
 
       {/* Reviews Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {filteredReviews.map(review => (
-          <div
-            key={review.id}
-            className={`bg-white p-6 rounded-2xl border transition-all hover:shadow-lg cursor-pointer ${
-              review.status === 'pending' 
-                ? 'border-yellow-300 bg-yellow-50/30' 
-                : review.status === 'rejected'
-                ? 'border-red-200 bg-red-50/30 opacity-60'
-                : 'border-[#E8C4B8]/30'
-            }`}
-            onClick={() => setViewReview(review)}
-          >
-            {/* Header */}
-            <div className="flex items-start justify-between mb-4">
-              <div className="flex items-center space-x-3">
-                <div className="w-12 h-12 bg-[#F5F0E8] rounded-full flex items-center justify-center text-[#8B6F5C] font-bold text-lg">
-                  {review.client_name?.charAt(0)?.toUpperCase() || '?'}
+        {filteredReviews.map(review => {
+          const clientName = getClientName(review);
+          const isPending = review.is_published === false;
+          
+          return (
+            <div
+              key={review.id}
+              className={`bg-white p-6 rounded-2xl border transition-all hover:shadow-lg cursor-pointer ${
+                isPending 
+                  ? 'border-yellow-300 bg-yellow-50/30' 
+                  : 'border-[#E8C4B8]/30'
+              }`}
+              onClick={() => setViewReview(review)}
+            >
+              {/* Header */}
+              <div className="flex items-start justify-between mb-4">
+                <div className="flex items-center space-x-3">
+                  <div className="w-12 h-12 bg-[#F5F0E8] rounded-full flex items-center justify-center text-[#8B6F5C] font-bold text-lg">
+                    {clientName.charAt(0).toUpperCase()}
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-[#4A3728]">{clientName}</h3>
+                    <p className="text-xs text-[#8B6F5C]">{formatDate(review.created_at)}</p>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="font-bold text-[#4A3728]">{review.client_name || 'Аноним'}</h3>
-                  <p className="text-xs text-[#8B6F5C]">{formatDate(review.created_at)}</p>
+                {getStatusBadge(review)}
+              </div>
+
+              {/* Rating */}
+              <div className="mb-3">
+                {renderStars(review.rating)}
+              </div>
+
+              {/* Text */}
+              <p className="text-[#4A3728]/80 text-sm line-clamp-3 mb-4">
+                {review.comment || 'Без комментария'}
+              </p>
+
+              {/* Service/Master */}
+              {(review.services?.name || review.masters?.name) && (
+                <div className="text-xs text-[#8B6F5C] space-y-1 pt-3 border-t border-[#E8C4B8]/30">
+                  {review.services?.name && <p>📌 {review.services.name}</p>}
+                  {review.masters?.name && <p>👤 {review.masters.name}</p>}
                 </div>
-              </div>
-              {getStatusBadge(review.status)}
+              )}
+
+              {/* Quick Actions */}
+              {isPending && (
+                <div className="flex gap-2 mt-4 pt-4 border-t border-[#E8C4B8]/30">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); updateStatus(review.id, true); }}
+                    className="flex-1 py-2 bg-green-100 text-green-700 rounded-xl font-bold text-sm hover:bg-green-200 flex items-center justify-center space-x-1"
+                  >
+                    <ThumbsUp size={14} />
+                    <span>Опубликовать</span>
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); deleteReview(review.id); }}
+                    className="flex-1 py-2 bg-red-100 text-red-600 rounded-xl font-bold text-sm hover:bg-red-200 flex items-center justify-center space-x-1"
+                  >
+                    <ThumbsDown size={14} />
+                    <span>Удалить</span>
+                  </button>
+                </div>
+              )}
             </div>
-
-            {/* Rating */}
-            <div className="mb-3">
-              {renderStars(review.rating)}
-            </div>
-
-            {/* Text */}
-            <p className="text-[#4A3728]/80 text-sm line-clamp-3 mb-4">
-              {review.text || 'Без комментария'}
-            </p>
-
-            {/* Service/Master */}
-            {(review.services?.name || review.masters?.name) && (
-              <div className="text-xs text-[#8B6F5C] space-y-1 pt-3 border-t border-[#E8C4B8]/30">
-                {review.services?.name && <p>📌 {review.services.name}</p>}
-                {review.masters?.name && <p>👤 {review.masters.name}</p>}
-              </div>
-            )}
-
-            {/* Quick Actions */}
-            {review.status === 'pending' && (
-              <div className="flex gap-2 mt-4 pt-4 border-t border-[#E8C4B8]/30">
-                <button
-                  onClick={(e) => { e.stopPropagation(); updateStatus(review.id, 'approved'); }}
-                  className="flex-1 py-2 bg-green-100 text-green-700 rounded-xl font-bold text-sm hover:bg-green-200 flex items-center justify-center space-x-1"
-                >
-                  <ThumbsUp size={14} />
-                  <span>Одобрить</span>
-                </button>
-                <button
-                  onClick={(e) => { e.stopPropagation(); updateStatus(review.id, 'rejected'); }}
-                  className="flex-1 py-2 bg-red-100 text-red-600 rounded-xl font-bold text-sm hover:bg-red-200 flex items-center justify-center space-x-1"
-                >
-                  <ThumbsDown size={14} />
-                  <span>Отклонить</span>
-                </button>
-              </div>
-            )}
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {filteredReviews.length === 0 && (
@@ -368,11 +378,11 @@ const AdminReviews: React.FC<AdminReviewsProps> = ({ onNotify }) => {
             <div className="flex justify-between items-start">
               <div className="flex items-center space-x-4">
                 <div className="w-16 h-16 bg-[#F5F0E8] rounded-full flex items-center justify-center text-[#8B6F5C] font-bold text-2xl">
-                  {viewReview.client_name?.charAt(0)?.toUpperCase() || '?'}
+                  {getClientName(viewReview).charAt(0).toUpperCase()}
                 </div>
                 <div>
                   <h3 className="text-xl font-rounded font-bold text-[#4A3728]">
-                    {viewReview.client_name || 'Аноним'}
+                    {getClientName(viewReview)}
                   </h3>
                   <p className="text-sm text-[#8B6F5C]">{formatDate(viewReview.created_at)}</p>
                 </div>
@@ -385,13 +395,13 @@ const AdminReviews: React.FC<AdminReviewsProps> = ({ onNotify }) => {
             {/* Status & Rating */}
             <div className="flex items-center justify-between">
               {renderStars(viewReview.rating, 24)}
-              {getStatusBadge(viewReview.status)}
+              {getStatusBadge(viewReview)}
             </div>
 
             {/* Text */}
             <div className="bg-[#F5F0E8] p-6 rounded-2xl">
               <p className="text-[#4A3728] leading-relaxed">
-                {viewReview.text || 'Клиент не оставил комментарий'}
+                {viewReview.comment || 'Клиент не оставил комментарий'}
               </p>
             </div>
 
@@ -415,40 +425,22 @@ const AdminReviews: React.FC<AdminReviewsProps> = ({ onNotify }) => {
 
             {/* Actions */}
             <div className="space-y-3 pt-4 border-t border-[#E8C4B8]/30">
-              {viewReview.status === 'pending' && (
-                <div className="flex gap-3">
-                  <button
-                    onClick={() => updateStatus(viewReview.id, 'approved')}
-                    className="flex-1 py-3 bg-green-500 text-white rounded-xl font-bold hover:bg-green-600 flex items-center justify-center space-x-2"
-                  >
-                    <CheckCircle size={18} />
-                    <span>Одобрить</span>
-                  </button>
-                  <button
-                    onClick={() => updateStatus(viewReview.id, 'rejected')}
-                    className="flex-1 py-3 bg-red-500 text-white rounded-xl font-bold hover:bg-red-600 flex items-center justify-center space-x-2"
-                  >
-                    <XCircle size={18} />
-                    <span>Отклонить</span>
-                  </button>
-                </div>
-              )}
-
-              {viewReview.status === 'approved' && (
+              {viewReview.is_published === false && (
                 <button
-                  onClick={() => updateStatus(viewReview.id, 'rejected')}
-                  className="w-full py-3 bg-orange-100 text-orange-600 rounded-xl font-bold hover:bg-orange-200"
+                  onClick={() => updateStatus(viewReview.id, true)}
+                  className="w-full py-3 bg-green-500 text-white rounded-xl font-bold hover:bg-green-600 flex items-center justify-center space-x-2"
                 >
-                  Скрыть отзыв
+                  <CheckCircle size={18} />
+                  <span>Опубликовать</span>
                 </button>
               )}
 
-              {viewReview.status === 'rejected' && (
+              {viewReview.is_published === true && (
                 <button
-                  onClick={() => updateStatus(viewReview.id, 'approved')}
-                  className="w-full py-3 bg-green-100 text-green-600 rounded-xl font-bold hover:bg-green-200"
+                  onClick={() => updateStatus(viewReview.id, false)}
+                  className="w-full py-3 bg-orange-100 text-orange-600 rounded-xl font-bold hover:bg-orange-200"
                 >
-                  Восстановить отзыв
+                  Скрыть отзыв
                 </button>
               )}
 
@@ -458,7 +450,7 @@ const AdminReviews: React.FC<AdminReviewsProps> = ({ onNotify }) => {
                   className="flex-1 py-3 bg-red-50 text-red-600 rounded-xl font-bold hover:bg-red-100 flex items-center justify-center space-x-2"
                 >
                   <Trash2 size={18} />
-                  <span>Удалить навсегда</span>
+                  <span>Удалить</span>
                 </button>
                 <button
                   onClick={() => setViewReview(null)}
