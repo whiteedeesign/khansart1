@@ -33,6 +33,25 @@ const BookingPage: React.FC<BookingPageProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [categories, setCategories] = useState<string[]>([]);
   const [activeCategory, setActiveCategory] = useState<string>('');
+  const [step, setStep] = useState(1);
+const [services, setServices] = useState<Service[]>(FALLBACK_SERVICES);
+const [masters, setMasters] = useState<Master[]>(FALLBACK_MASTERS);
+const [loading, setLoading] = useState(true);
+const [submitting, setSubmitting] = useState(false);
+const [error, setError] = useState<string | null>(null);
+const [categories, setCategories] = useState<string[]>([]);
+const [activeCategory, setActiveCategory] = useState<string>('');
+
+// 🎟️ Промокод вручную - ДОБАВЬ ЭТИ СТРОКИ!
+const [manualPromoCode, setManualPromoCode] = useState('');
+const [promoLoading, setPromoLoading] = useState(false);
+const [promoError, setPromoError] = useState<string | null>(null);
+const [appliedPromoData, setAppliedPromoData] = useState<{
+  code: string;
+  name: string;
+  discountPercent?: number;
+  discountAmount?: number;
+} | null>(null);
   
   const [bookingData, setBookingData] = useState<BookingState>({
     serviceId: initialServiceId || null,
