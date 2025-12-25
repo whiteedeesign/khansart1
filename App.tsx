@@ -16,7 +16,7 @@ import AdminPanel from './components/AdminPanel';
 import ServicesModal from './components/ServicesModal';
 import MasterDetailModal from './components/MasterDetailModal';
 import AuthModal from './components/AuthModal';
-import { supabase } from './lib/supabase';
+import { supabase } from './src/lib/supabase';
 import { Master } from './types';
 
 type View = 'landing' | 'booking' | 'account' | 'master' | 'admin';
